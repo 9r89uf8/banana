@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useRef, useCallback } from 'react';
+import { useState, useRef, useCallback, useEffect } from 'react';
 import { validateImageFile } from '@/app/utils/imageUtils';
 
 export default function ObjectCompositor() {
@@ -32,11 +32,14 @@ export default function ObjectCompositor() {
         setCompositeResult(null);
         setError('');
 
-        const reader = new FileReader();
-        reader.onload = (e) => {
-          setMainImagePreview(e.target.result);
-        };
-        reader.readAsDataURL(file);
+        // Clean up previous URL if it exists
+        if (mainImagePreview && mainImagePreview.startsWith('blob:')) {
+          URL.revokeObjectURL(mainImagePreview);
+        }
+
+        // Create new object URL
+        const objectURL = URL.createObjectURL(file);
+        setMainImagePreview(objectURL);
       } catch (err) {
         setError(err.message);
       }
@@ -52,52 +55,87 @@ export default function ObjectCompositor() {
         setCompositeResult(null);
         setError('');
 
-        const reader = new FileReader();
-        reader.onload = (e) => {
-          setObjectImagePreview(e.target.result);
-        };
-        reader.readAsDataURL(file);
+        // Clean up previous URL if it exists
+        if (objectImagePreview && objectImagePreview.startsWith('blob:')) {
+          URL.revokeObjectURL(objectImagePreview);
+        }
+
+        // Create new object URL
+        const objectURL = URL.createObjectURL(file);
+        setObjectImagePreview(objectURL);
       } catch (err) {
         setError(err.message);
       }
     }
   };
 
-  const getCanvasCoordinates = useCallback((event) => {
+  const getCanvasPercent = useCallback((event) => {
     const canvas = canvasRef.current;
     const rect = canvas.getBoundingClientRect();
-    const scaleX = canvas.width / rect.width;
-    const scaleY = canvas.height / rect.height;
-
-    const x = (event.clientX - rect.left) * scaleX;
-    const y = (event.clientY - rect.top) * scaleY;
-
-    return { x, y };
+    const xPct = ((event.clientX - rect.left) / rect.width) * 100;
+    const yPct = ((event.clientY - rect.top) / rect.height) * 100;
+    return {
+      x: Math.max(0, Math.min(100, xPct)),
+      y: Math.max(0, Math.min(100, yPct))
+    };
   }, []);
 
-  const handleCanvasMouseDown = (event) => {
+  const handlePointerDown = (event) => {
+    event.target.setPointerCapture(event.pointerId);
     setIsDragging(true);
-    const coords = getCanvasCoordinates(event);
-    const percentX = (coords.x / canvasRef.current.width) * 100;
-    const percentY = (coords.y / canvasRef.current.height) * 100;
-    setObjectPosition({ x: percentX, y: percentY });
+    setObjectPosition(getCanvasPercent(event));
   };
 
-  const handleCanvasMouseMove = (event) => {
+  const handlePointerMove = (event) => {
     if (!isDragging) return;
-
-    const coords = getCanvasCoordinates(event);
-    const percentX = (coords.x / canvasRef.current.width) * 100;
-    const percentY = (coords.y / canvasRef.current.height) * 100;
-    setObjectPosition({
-      x: Math.max(0, Math.min(100, percentX)),
-      y: Math.max(0, Math.min(100, percentY))
-    });
+    setObjectPosition(getCanvasPercent(event));
   };
 
-  const handleCanvasMouseUp = () => {
+  const handlePointerUp = () => {
     setIsDragging(false);
   };
+
+  // Sync canvas size with image to ensure accurate hit testing
+  useEffect(() => {
+    if (!mainImageRef.current || !canvasRef.current) return;
+    
+    const img = mainImageRef.current;
+    const canvas = canvasRef.current;
+    
+    const syncCanvasSize = () => {
+      const w = img.clientWidth;
+      const h = img.clientHeight;
+      const dpr = window.devicePixelRatio || 1;
+      
+      canvas.style.width = `${w}px`;
+      canvas.style.height = `${h}px`;
+      canvas.width = Math.round(w * dpr);
+      canvas.height = Math.round(h * dpr);
+    };
+    
+    const resizeObserver = new ResizeObserver(syncCanvasSize);
+    resizeObserver.observe(img);
+    syncCanvasSize();
+    
+    return () => resizeObserver.disconnect();
+  }, [mainImagePreview]);
+
+  // Cleanup object URLs on component unmount or when images change
+  useEffect(() => {
+    return () => {
+      if (mainImagePreview && mainImagePreview.startsWith('blob:')) {
+        URL.revokeObjectURL(mainImagePreview);
+      }
+    };
+  }, [mainImagePreview]);
+
+  useEffect(() => {
+    return () => {
+      if (objectImagePreview && objectImagePreview.startsWith('blob:')) {
+        URL.revokeObjectURL(objectImagePreview);
+      }
+    };
+  }, [objectImagePreview]);
 
   const handleCompose = async () => {
     if (!mainImage || !objectImage) {
@@ -149,6 +187,14 @@ export default function ObjectCompositor() {
   };
 
   const resetCompositor = () => {
+    // Clean up object URLs before resetting
+    if (mainImagePreview && mainImagePreview.startsWith('blob:')) {
+      URL.revokeObjectURL(mainImagePreview);
+    }
+    if (objectImagePreview && objectImagePreview.startsWith('blob:')) {
+      URL.revokeObjectURL(objectImagePreview);
+    }
+
     setMainImage(null);
     setObjectImage(null);
     setMainImagePreview(null);
@@ -161,6 +207,32 @@ export default function ObjectCompositor() {
     setCompositeResult(null);
     setError('');
     setIsRefusal(false);
+  };
+
+  const downloadComposite = async () => {
+    if (!compositeResult?.imageUrl) return;
+    
+    try {
+      // Fetch the image blob
+      const response = await fetch(compositeResult.imageUrl);
+      const blob = await response.blob();
+      
+      // Create download link
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `composite-${Date.now()}.png`;
+      
+      // Trigger download
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      
+      // Clean up
+      URL.revokeObjectURL(url);
+    } catch (error) {
+      setError('Failed to download image: ' + error.message);
+    }
   };
 
   return (
@@ -233,14 +305,15 @@ export default function ObjectCompositor() {
                 <canvas
                   ref={canvasRef}
                   className="absolute top-0 left-0 w-full h-full cursor-crosshair rounded-lg"
-                  onMouseDown={handleCanvasMouseDown}
-                  onMouseMove={handleCanvasMouseMove}
-                  onMouseUp={handleCanvasMouseUp}
-                  onMouseLeave={handleCanvasMouseUp}
+                  onPointerDown={handlePointerDown}
+                  onPointerMove={handlePointerMove}
+                  onPointerUp={handlePointerUp}
+                  onPointerLeave={handlePointerUp}
                   style={{
                     width: '100%',
                     height: '100%',
-                    background: 'rgba(0,0,0,0.1)'
+                    background: 'rgba(0,0,0,0.1)',
+                    touchAction: 'none'
                   }}
                 />
                 {/* Position Marker */}
@@ -394,7 +467,18 @@ export default function ObjectCompositor() {
           {/* Result Display */}
           {compositeResult && (
             <div className="mt-6">
-              <h3 className="text-lg font-semibold text-gray-800 mb-3">Composite Result</h3>
+              <div className="flex items-center justify-between mb-3">
+                <h3 className="text-lg font-semibold text-gray-800">Composite Result</h3>
+                <button
+                  onClick={downloadComposite}
+                  className="flex items-center space-x-2 px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-md transition-colors duration-200"
+                >
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                  </svg>
+                  <span>Download</span>
+                </button>
+              </div>
               <div className="bg-gray-50 rounded-lg p-4">
                 <img
                   src={compositeResult.imageUrl}

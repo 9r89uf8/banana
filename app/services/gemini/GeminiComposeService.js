@@ -17,28 +17,51 @@ export class GeminiComposeService extends GeminiBaseService {
   }
 
   /**
-   * Helper: best-effort JSON extraction from a text blob.
+   * Helper: robust JSON extraction from a text blob.
    */
   _extractJson(text) {
     if (!text) return null;
-    // Try direct parse
+    
+    // Clean the text by removing common prefixes/suffixes
+    const cleanText = text.trim().replace(/^```json\s*|\s*```$/gi, '');
+    
+    // Try direct parse first
     try {
-      return JSON.parse(text.trim());
+      return JSON.parse(cleanText);
     } catch (_) {
-      // Try to find the first {...} block
-      const start = text.indexOf('{');
-      const end = text.lastIndexOf('}');
+      // Try to find JSON block patterns
+      const jsonPatterns = [
+        /\{[^{}]*\{[^{}]*\}[^{}]*\}/,  // nested object pattern
+        /\{[^{}]*\}/,                    // simple object pattern
+      ];
+      
+      for (const pattern of jsonPatterns) {
+        const match = cleanText.match(pattern);
+        if (match) {
+          try {
+            return JSON.parse(match[0]);
+          } catch (_) {
+            continue;
+          }
+        }
+      }
+      
+      // Last resort: try to extract between first { and last }
+      const start = cleanText.indexOf('{');
+      const end = cleanText.lastIndexOf('}');
       if (start !== -1 && end !== -1 && end > start) {
-        const slice = text.slice(start, end + 1);
+        const slice = cleanText.slice(start, end + 1);
         try {
           return JSON.parse(slice);
         } catch (_) {
           return null;
         }
       }
+      
       return null;
     }
   }
+
 
   async composeImages(
       mainImageBuffer,
@@ -148,7 +171,7 @@ ${this.JSON_RETRY_HINT}
         },
       ];
 
-      // Stage 1: TEXT-ONLY for deterministic JSON
+      // Stage 1: TEXT-ONLY for deterministic JSON (model doesn't support JSON mode)
       const locationConfig = {
         responseModalities: ['TEXT'],
         safetySettings: this.config.safetySettings,
@@ -170,10 +193,10 @@ ${this.JSON_RETRY_HINT}
         }
       }
 
-      // Try parsing JSON strictly.
+      // Try parsing JSON with improved extraction
       let json = this._extractJson(textOut);
 
-      // If parsing failed, try once more with a terse repair prompt.
+      // If parsing failed, try once more with a repair prompt
       if (!json) {
         const repairPrompt = `
 You previously returned an invalid response. ${this.JSON_RETRY_HINT}
@@ -185,7 +208,7 @@ Return JSON in ONE LINE for this schema. Fill missing fields conservatively.
         const repairResponse = await this.ai.models.generateContentStream({
           model: this.model,
           config: locationConfig,
-          contents: [{ role: 'user', parts: [repairPrompt] }],
+          contents: [{ role: 'user', parts: [{ text: repairPrompt }] }],
         });
 
         textOut = '';
@@ -243,7 +266,7 @@ Return JSON in ONE LINE for this schema. Fill missing fields conservatively.
       const objectPart = this._bufferToInlinePart(objectImageBuffer);
 
       const semanticJSON = JSON.stringify(semanticLocation);
-      console.log(semanticJSON)
+      // Debug logging removed for security
 
       const compositionPrompt = `
 Create a realistic composite using:

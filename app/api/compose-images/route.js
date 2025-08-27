@@ -1,50 +1,69 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { geminiComposeService, GenerationRefusedError } from '@/app/services/gemini';
 import { uploadToFirebaseStorage } from '@/app/middleware/firebaseStorage';
+import { ImageValidationMiddleware, validators } from '@/app/middleware/imageValidationMiddleware';
 import { v4 as uuidv4 } from 'uuid';
 
 export async function POST(request) {
   try {
     const formData = await request.formData();
-    const mainImage = formData.get('mainImage');
-    const objectImage = formData.get('objectImage');
-    const positionX = parseFloat(formData.get('positionX'));
-    const positionY = parseFloat(formData.get('positionY'));
-    const sceneDescription = formData.get('sceneDescription') || '';
-    const objectDescription = formData.get('objectDescription') || '';
-    const interactionIntent = formData.get('interactionIntent') || 'auto';
-    const interactionCustom = formData.get('interactionCustom') || '';
-
-    // Validate required fields
-    if (!mainImage || !objectImage) {
-      return NextResponse.json(
-        { error: 'Both main image and object image are required' },
-        { status: 400 }
-      );
-    }
-
-    if (isNaN(positionX) || isNaN(positionY)) {
-      return NextResponse.json(
-        { error: 'Valid position coordinates are required' },
-        { status: 400 }
-      );
-    }
+    
+    // Get client IP for rate limiting
+    const clientIP = request.headers.get('x-forwarded-for') || 
+                     request.headers.get('x-real-ip') || 
+                     '127.0.0.1';
+    
+    // Check rate limit
+    ImageValidationMiddleware.checkRateLimit(clientIP);
+    
+    // Validate images
+    const validatedImages = await ImageValidationMiddleware.validateImages(
+      formData,
+      ['mainImage', 'objectImage']
+    );
+    
+    // Validate parameters
+    const params = ImageValidationMiddleware.validateFormParams(
+      formData,
+      {
+        positionX: validators.percentage,
+        positionY: validators.percentage
+      },
+      {
+        sceneDescription: validators.string,
+        objectDescription: validators.string,
+        interactionIntent: validators.enum([
+          'auto', 'hold_grasp', 'place_on_surface', 'wear', 
+          'hang', 'lean', 'float', 'custom'
+        ]),
+        interactionCustom: validators.string
+      }
+    );
+    
+    const {
+      positionX,
+      positionY,
+      sceneDescription = '',
+      objectDescription = '',
+      interactionIntent = 'auto',
+      interactionCustom = ''
+    } = params;
 
     console.log('Processing composition request:', {
       positionX,
       positionY,
-      sceneDescription,
-      objectDescription,
+      sceneDescription: sceneDescription || '[empty]',
+      objectDescription: objectDescription || '[empty]',
       interactionIntent,
-      interactionCustom,
-      mainImageSize: mainImage.size,
-      objectImageSize: objectImage.size
+      interactionCustom: interactionCustom || '[empty]',
+      mainImageSize: validatedImages.mainImage.size,
+      objectImageSize: validatedImages.objectImage.size,
+      clientIP: clientIP.substring(0, 8) + '***' // Log partial IP for debugging
     });
 
-    // Convert uploaded images to buffers for Gemini
-    console.log('Converting images to buffers...');
-    const mainImageBuffer = Buffer.from(await mainImage.arrayBuffer());
-    const objectImageBuffer = Buffer.from(await objectImage.arrayBuffer());
+    // Use validated image buffers
+    const mainImageBuffer = validatedImages.mainImage.buffer;
+    const objectImageBuffer = validatedImages.objectImage.buffer;
 
     // Use Gemini service to compose the images directly
     console.log('Calling Gemini service for composition...');
@@ -91,6 +110,18 @@ export async function POST(request) {
 
   } catch (error) {
     console.error('Error in compose-images API:', error);
+    
+    // Handle validation and rate limiting errors
+    if (error.message.includes('Rate limit') || 
+        error.message.includes('Invalid') ||
+        error.message.includes('Missing required') ||
+        error.message.includes('Image size too large') ||
+        error.message.includes('File content does not match')) {
+      return NextResponse.json(
+        { error: error.message },
+        { status: 400 }
+      );
+    }
     
     // Handle refusal errors separately from server errors
     if (error instanceof GenerationRefusedError) {

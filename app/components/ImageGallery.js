@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { storage } from '@/app/utils/firebaseClient';
-import { ref, listAll, getDownloadURL } from 'firebase/storage';
+import { ref, listAll, getDownloadURL, getBlob, getMetadata } from 'firebase/storage';
 
 export default function ImageGallery() {
   const [images, setImages] = useState([]);
@@ -32,7 +32,11 @@ export default function ImageGallery() {
       const allItems = [...generatedList.items, ...editedList.items, ...compositeList.items];
       
       const imagePromises = allItems.map(async (item) => {
-        const url = await getDownloadURL(item);
+        const [url, metadata] = await Promise.all([
+          getDownloadURL(item),
+          getMetadata(item)
+        ]);
+        
         let type = 'generated';
         if (item.fullPath.includes('edited-images')) {
           type = 'edited';
@@ -45,7 +49,7 @@ export default function ImageGallery() {
           url,
           path: item.fullPath,
           type,
-          createdTime: item.timeCreated || new Date()
+          createdTime: metadata.timeCreated
         };
       });
 
@@ -68,6 +72,85 @@ export default function ImageGallery() {
 
   const closeModal = () => {
     setSelectedImage(null);
+  };
+
+  const downloadOriginal = async (image) => {
+    try {
+      const imageRef = ref(storage, image.path);
+      const blob = await getBlob(imageRef);
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = image.name;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+    } catch (error) {
+      console.error('Error downloading image:', error);
+      setError('Failed to download image');
+    }
+  };
+
+  const download916AspectRatio = async (image) => {
+    try {
+      const imageRef = ref(storage, image.path);
+      const blob = await getBlob(imageRef);
+      const objectUrl = URL.createObjectURL(blob);
+
+      const img = new Image();
+      await new Promise((resolve, reject) => {
+        img.onload = resolve;
+        img.onerror = () => reject(new Error('Failed to load image'));
+        img.src = objectUrl;
+      });
+
+      const canvas = document.createElement('canvas');
+      const ctx = canvas.getContext('2d');
+
+      const targetRatio = 9 / 16;
+      const imgRatio = img.width / img.height;
+
+      let sx, sy, sw, sh;
+      if (imgRatio > targetRatio) {
+        sh = img.height;
+        sw = img.height * targetRatio;
+        sx = (img.width - sw) / 2;
+        sy = 0;
+      } else {
+        sw = img.width;
+        sh = img.width / targetRatio;
+        sx = 0;
+        sy = (img.height - sh) / 2;
+      }
+
+      const targetHeight = 1600;
+      const targetWidth = Math.round(targetHeight * targetRatio);
+      canvas.width = targetWidth;
+      canvas.height = targetHeight;
+
+      ctx.drawImage(img, sx, sy, sw, sh, 0, 0, targetWidth, targetHeight);
+
+      await new Promise((resolve, reject) => {
+        canvas.toBlob((outputBlob) => {
+          if (!outputBlob) return reject(new Error('toBlob failed'));
+          const outputUrl = URL.createObjectURL(outputBlob);
+          const link = document.createElement('a');
+          link.href = outputUrl;
+          link.download = image.name.replace(/\.[^/.]+$/, '') + '_9x16.jpg';
+          document.body.appendChild(link);
+          link.click();
+          document.body.removeChild(link);
+          URL.revokeObjectURL(outputUrl);
+          resolve();
+        }, 'image/jpeg', 0.9);
+      });
+
+      URL.revokeObjectURL(objectUrl);
+    } catch (error) {
+      console.error('Error downloading 9:16 image:', error);
+      setError('Failed to create 9:16 aspect ratio image');
+    }
   };
 
   if (isLoading) {
@@ -165,6 +248,34 @@ export default function ImageGallery() {
                 <p><span className="font-semibold">File:</span> {selectedImage.name}</p>
                 <p><span className="font-semibold">Type:</span> {selectedImage.type === 'generated' ? 'AI Generated' : 
                    selectedImage.type === 'edited' ? 'AI Edited' : 'AI Composite'}</p>
+              </div>
+              
+              <div className="mt-6 pt-4 border-t border-gray-200">
+                <h4 className="text-lg font-semibold text-gray-800 mb-3">Download Options</h4>
+                <div className="flex flex-col sm:flex-row gap-3">
+                  <button
+                    onClick={() => downloadOriginal(selectedImage)}
+                    className="flex-1 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-md transition-colors duration-200 flex items-center justify-center gap-2"
+                  >
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                    </svg>
+                    Original Size
+                  </button>
+                  
+                  <button
+                    onClick={() => download916AspectRatio(selectedImage)}
+                    className="flex-1 px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-md transition-colors duration-200 flex items-center justify-center gap-2"
+                  >
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                    </svg>
+                    9:16 Aspect Ratio
+                  </button>
+                </div>
+                <p className="text-xs text-gray-500 mt-2">
+                  9:16 format is optimized for mobile and social media vertical displays
+                </p>
               </div>
             </div>
           </div>

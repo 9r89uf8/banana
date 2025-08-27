@@ -1,15 +1,54 @@
-export const validateImageFile = (file) => {
+export const validateImageFile = (file, maxSize = 15 * 1024 * 1024) => {
   if (!file) {
     throw new Error('No file selected');
   }
 
-  if (!file.type.startsWith('image/')) {
-    throw new Error('Please select a valid image file');
+  // Validate MIME type
+  const allowedTypes = ['image/jpeg', 'image/jpg', 'image/png', 'image/webp'];
+  if (!allowedTypes.includes(file.type.toLowerCase())) {
+    throw new Error('Please select a valid image file (JPEG, PNG, or WebP)');
   }
 
-  const maxSize = 10 * 1024 * 1024; // 10MB
+  // Validate file size (default 15MB to handle high-res images)
   if (file.size > maxSize) {
-    throw new Error('Image file size must be less than 10MB');
+    const maxMB = Math.round(maxSize / (1024 * 1024));
+    throw new Error(`Image file size must be less than ${maxMB}MB`);
+  }
+
+  return true;
+};
+
+// Server-side validation for uploaded files
+export const validateImageBuffer = (buffer, mimeType, maxSize = 15 * 1024 * 1024) => {
+  if (!buffer || buffer.length === 0) {
+    throw new Error('No image data received');
+  }
+
+  // Validate MIME type
+  const allowedTypes = ['image/jpeg', 'image/jpg', 'image/png', 'image/webp'];
+  if (!allowedTypes.includes(mimeType?.toLowerCase())) {
+    throw new Error('Invalid image type. Only JPEG, PNG, and WebP are allowed.');
+  }
+
+  // Validate file size
+  if (buffer.length > maxSize) {
+    const maxMB = Math.round(maxSize / (1024 * 1024));
+    throw new Error(`Image size too large. Maximum ${maxMB}MB allowed.`);
+  }
+
+  // Basic magic number validation
+  const magicNumbers = {
+    'image/jpeg': [0xFF, 0xD8, 0xFF],
+    'image/png': [0x89, 0x50, 0x4E, 0x47],
+    'image/webp': [0x52, 0x49, 0x46, 0x46] // RIFF header for WebP
+  };
+
+  const signature = magicNumbers[mimeType?.toLowerCase()];
+  if (signature && buffer.length >= signature.length) {
+    const matches = signature.every((byte, index) => buffer[index] === byte);
+    if (!matches) {
+      throw new Error('File content does not match declared image type');
+    }
   }
 
   return true;
@@ -54,16 +93,25 @@ export const formatFileSize = (bytes) => {
   return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
 };
 
-export const resizeImageForProcessing = (file, targetSize = 1024) => {
+// Improved resizing function that handles images > 8MP
+export const resizeImageForProcessing = (file, maxLongestEdge = 2048) => {
   return new Promise((resolve, reject) => {
     const canvas = document.createElement('canvas');
     const ctx = canvas.getContext('2d');
     const img = new Image();
 
     img.onload = () => {
-      const ratio = Math.min(targetSize / img.width, targetSize / img.height);
-      const newWidth = img.width * ratio;
-      const newHeight = img.height * ratio;
+      // Only downscale if image is larger than target
+      const longestEdge = Math.max(img.width, img.height);
+      if (longestEdge <= maxLongestEdge) {
+        // Image is already small enough, return as-is
+        resolve(file);
+        return;
+      }
+      
+      const ratio = maxLongestEdge / longestEdge;
+      const newWidth = Math.round(img.width * ratio);
+      const newHeight = Math.round(img.height * ratio);
       
       canvas.width = newWidth;
       canvas.height = newHeight;
