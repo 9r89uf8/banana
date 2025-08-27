@@ -1,10 +1,10 @@
 'use client';
 
-import { useState, useRef } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { storage } from '@/app/utils/firebaseClient';
 import { ref, getBlob } from 'firebase/storage';
 
-export default function ImageEditor() {
+export default function ImageEditor({ initialImage }) {
   const [selectedImage, setSelectedImage] = useState(null);
   const [imagePreview, setImagePreview] = useState(null);
   const [editPrompt, setEditPrompt] = useState('');
@@ -13,6 +13,37 @@ export default function ImageEditor() {
   const [error, setError] = useState('');
   const [isRefusal, setIsRefusal] = useState(false);
   const fileInputRef = useRef(null);
+
+  useEffect(() => {
+    if (initialImage) {
+      loadInitialImage(initialImage);
+    }
+  }, [initialImage]);
+
+  const loadInitialImage = async (image) => {
+    try {
+      setIsLoading(true);
+      setError('');
+      
+      const response = await fetch(image.url);
+      const blob = await response.blob();
+      
+      const file = new File([blob], image.name, { type: blob.type });
+      
+      setSelectedImage(file);
+      setImagePreview(image.url);
+      setEditedImage(null);
+      
+      if (fileInputRef.current) {
+        fileInputRef.current.value = '';
+      }
+    } catch (error) {
+      console.error('Error loading initial image:', error);
+      setError('Failed to load image from gallery');
+    } finally {
+      setIsLoading(false);
+    }
+  };
 
   const handleImageSelect = (event) => {
     const file = event.target.files[0];

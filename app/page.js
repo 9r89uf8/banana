@@ -8,6 +8,12 @@ import ObjectCompositor from './components/ObjectCompositor';
 
 export default function Home() {
   const [activeTab, setActiveTab] = useState('generate');
+  const [imageToEdit, setImageToEdit] = useState(null);
+
+  const handleEditImage = (image) => {
+    setImageToEdit(image);
+    setActiveTab('edit');
+  };
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100">
@@ -64,9 +70,9 @@ export default function Home() {
 
         <main className="flex justify-center">
           {activeTab === 'generate' && <ImageGenerator />}
-          {activeTab === 'edit' && <ImageEditor />}
+          {activeTab === 'edit' && <ImageEditor initialImage={imageToEdit} />}
           {activeTab === 'compose' && <ObjectCompositor />}
-          {activeTab === 'gallery' && <ImageGallery />}
+          {activeTab === 'gallery' && <ImageGallery onEditImage={handleEditImage} />}
         </main>
       </div>
     </div>

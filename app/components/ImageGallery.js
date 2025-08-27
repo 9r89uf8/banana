@@ -4,7 +4,7 @@ import { useState, useEffect } from 'react';
 import { storage } from '@/app/utils/firebaseClient';
 import { ref, listAll, getDownloadURL, getBlob, getMetadata } from 'firebase/storage';
 
-export default function ImageGallery() {
+export default function ImageGallery({ onEditImage }) {
   const [images, setImages] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState('');
@@ -250,6 +250,24 @@ export default function ImageGallery() {
                    selectedImage.type === 'edited' ? 'AI Edited' : 'AI Composite'}</p>
               </div>
               
+              {onEditImage && (
+                <div className="mt-6 pt-4 border-t border-gray-200">
+                  <h4 className="text-lg font-semibold text-gray-800 mb-3">Edit Options</h4>
+                  <button
+                    onClick={() => {
+                      onEditImage(selectedImage);
+                      closeModal();
+                    }}
+                    className="w-full px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-md transition-colors duration-200 flex items-center justify-center gap-2"
+                  >
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
+                    </svg>
+                    Edit Image
+                  </button>
+                </div>
+              )}
+
               <div className="mt-6 pt-4 border-t border-gray-200">
                 <h4 className="text-lg font-semibold text-gray-800 mb-3">Download Options</h4>
                 <div className="flex flex-col sm:flex-row gap-3">
