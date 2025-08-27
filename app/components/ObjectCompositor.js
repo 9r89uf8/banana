@@ -2,6 +2,8 @@
 
 import { useState, useRef, useCallback, useEffect } from 'react';
 import { validateImageFile } from '@/app/utils/imageUtils';
+import { storage } from '@/app/utils/firebaseClient';
+import { ref, getBlob } from 'firebase/storage';
 
 export default function ObjectCompositor() {
   const [mainImage, setMainImage] = useState(null);
@@ -209,29 +211,83 @@ export default function ObjectCompositor() {
     setIsRefusal(false);
   };
 
-  const downloadComposite = async () => {
-    if (!compositeResult?.imageUrl) return;
-    
+  const downloadOriginal = async (image) => {
     try {
-      // Fetch the image blob
-      const response = await fetch(compositeResult.imageUrl);
-      const blob = await response.blob();
-      
-      // Create download link
+      const imageRef = ref(storage, image.fileName);
+      const blob = await getBlob(imageRef);
       const url = URL.createObjectURL(blob);
       const link = document.createElement('a');
       link.href = url;
-      link.download = `composite-${Date.now()}.png`;
-      
-      // Trigger download
+      link.download = image.fileName.split('/').pop();
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
-      
-      // Clean up
       URL.revokeObjectURL(url);
     } catch (error) {
-      setError('Failed to download image: ' + error.message);
+      console.error('Error downloading image:', error);
+      setError('Failed to download image');
+    }
+  };
+
+  const download916AspectRatio = async (image) => {
+    try {
+      const imageRef = ref(storage, image.fileName);
+      const blob = await getBlob(imageRef);
+      const objectUrl = URL.createObjectURL(blob);
+
+      const img = new Image();
+      await new Promise((resolve, reject) => {
+        img.onload = resolve;
+        img.onerror = () => reject(new Error('Failed to load image'));
+        img.src = objectUrl;
+      });
+
+      const canvas = document.createElement('canvas');
+      const ctx = canvas.getContext('2d');
+
+      const targetRatio = 9 / 16;
+      const imgRatio = img.width / img.height;
+
+      let sx, sy, sw, sh;
+      if (imgRatio > targetRatio) {
+        sh = img.height;
+        sw = img.height * targetRatio;
+        sx = (img.width - sw) / 2;
+        sy = 0;
+      } else {
+        sw = img.width;
+        sh = img.width / targetRatio;
+        sx = 0;
+        sy = (img.height - sh) / 2;
+      }
+
+      const targetHeight = 1600;
+      const targetWidth = Math.round(targetHeight * targetRatio);
+      canvas.width = targetWidth;
+      canvas.height = targetHeight;
+
+      ctx.drawImage(img, sx, sy, sw, sh, 0, 0, targetWidth, targetHeight);
+
+      await new Promise((resolve, reject) => {
+        canvas.toBlob((outputBlob) => {
+          if (!outputBlob) return reject(new Error('toBlob failed'));
+          const outputUrl = URL.createObjectURL(outputBlob);
+          const link = document.createElement('a');
+          link.href = outputUrl;
+          const fileName = image.fileName.split('/').pop().replace(/\.[^/.]+$/, '') + '_9x16.jpg';
+          link.download = fileName;
+          document.body.appendChild(link);
+          link.click();
+          document.body.removeChild(link);
+          URL.revokeObjectURL(outputUrl);
+          resolve();
+        }, 'image/jpeg', 0.9);
+      });
+
+      URL.revokeObjectURL(objectUrl);
+    } catch (error) {
+      console.error('Error downloading 9:16 image:', error);
+      setError('Failed to create 9:16 aspect ratio image');
     }
   };
 
@@ -467,18 +523,7 @@ export default function ObjectCompositor() {
           {/* Result Display */}
           {compositeResult && (
             <div className="mt-6">
-              <div className="flex items-center justify-between mb-3">
-                <h3 className="text-lg font-semibold text-gray-800">Composite Result</h3>
-                <button
-                  onClick={downloadComposite}
-                  className="flex items-center space-x-2 px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-md transition-colors duration-200"
-                >
-                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                  </svg>
-                  <span>Download</span>
-                </button>
-              </div>
+              <h3 className="text-lg font-semibold text-gray-800 mb-3">Composite Result</h3>
               <div className="bg-gray-50 rounded-lg p-4">
                 <img
                   src={compositeResult.imageUrl}
@@ -489,6 +534,34 @@ export default function ObjectCompositor() {
                   <p><span className="font-semibold">Position:</span> {objectPosition.x.toFixed(1)}%, {objectPosition.y.toFixed(1)}%</p>
                   {sceneDescription && <p><span className="font-semibold">Scene:</span> {sceneDescription}</p>}
                   {objectDescription && <p><span className="font-semibold">Object:</span> {objectDescription}</p>}
+                </div>
+                
+                <div className="mt-6 pt-4 border-t border-gray-200">
+                  <h4 className="text-lg font-semibold text-gray-800 mb-3">Download Options</h4>
+                  <div className="flex flex-col sm:flex-row gap-3">
+                    <button
+                      onClick={() => downloadOriginal(compositeResult)}
+                      className="flex-1 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-md transition-colors duration-200 flex items-center justify-center gap-2"
+                    >
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                      </svg>
+                      Original Size
+                    </button>
+                    
+                    <button
+                      onClick={() => download916AspectRatio(compositeResult)}
+                      className="flex-1 px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-md transition-colors duration-200 flex items-center justify-center gap-2"
+                    >
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                      </svg>
+                      9:16 Aspect Ratio
+                    </button>
+                  </div>
+                  <p className="text-xs text-gray-500 mt-2">
+                    9:16 format is optimized for mobile and social media vertical displays
+                  </p>
                 </div>
               </div>
             </div>
