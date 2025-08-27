@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { geminiService, GenerationRefusedError } from '@/app/services/geminiService';
+import { geminiEditService, GenerationRefusedError } from '@/app/services/gemini';
 import { uploadToFirebaseStorage } from '@/app/middleware/firebaseStorage';
 import { v4 as uuidv4 } from 'uuid';
 
@@ -20,7 +20,7 @@ export async function POST(request) {
     const imageBuffer = Buffer.from(await image.arrayBuffer());
 
     // Edit image using Gemini
-    const editedImageBuffer = await geminiService.editImage(imageBuffer, editPrompt);
+    const editedImageBuffer = await geminiEditService.editImage(imageBuffer, editPrompt);
 
     // Generate unique filename
     const fileName = `edited-images/${uuidv4()}.png`;

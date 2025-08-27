@@ -21,21 +21,30 @@ export default function ImageGallery() {
     try {
       const generatedRef = ref(storage, 'generated-images');
       const editedRef = ref(storage, 'edited-images');
+      const compositeRef = ref(storage, 'composite-images');
       
-      const [generatedList, editedList] = await Promise.all([
+      const [generatedList, editedList, compositeList] = await Promise.all([
         listAll(generatedRef),
-        listAll(editedRef)
+        listAll(editedRef),
+        listAll(compositeRef)
       ]);
 
-      const allItems = [...generatedList.items, ...editedList.items];
+      const allItems = [...generatedList.items, ...editedList.items, ...compositeList.items];
       
       const imagePromises = allItems.map(async (item) => {
         const url = await getDownloadURL(item);
+        let type = 'generated';
+        if (item.fullPath.includes('edited-images')) {
+          type = 'edited';
+        } else if (item.fullPath.includes('composite-images')) {
+          type = 'composite';
+        }
+        
         return {
           name: item.name,
           url,
           path: item.fullPath,
-          type: item.fullPath.includes('generated-images') ? 'generated' : 'edited',
+          type,
           createdTime: item.timeCreated || new Date()
         };
       });
@@ -117,9 +126,11 @@ export default function ImageGallery() {
                   </div>
                   <div className="absolute top-2 right-2">
                     <span className={`px-2 py-1 text-xs font-semibold rounded-full text-white ${
-                      image.type === 'generated' ? 'bg-green-500' : 'bg-blue-500'
+                      image.type === 'generated' ? 'bg-green-500' : 
+                      image.type === 'edited' ? 'bg-blue-500' : 'bg-purple-500'
                     }`}>
-                      {image.type === 'generated' ? 'Generated' : 'Edited'}
+                      {image.type === 'generated' ? 'Generated' : 
+                       image.type === 'edited' ? 'Edited' : 'Composite'}
                     </span>
                   </div>
                 </div>
@@ -135,7 +146,8 @@ export default function ImageGallery() {
             <div className="p-6">
               <div className="flex justify-between items-center mb-4">
                 <h3 className="text-xl font-semibold text-gray-800">
-                  {selectedImage.type === 'generated' ? 'Generated Image' : 'Edited Image'}
+                  {selectedImage.type === 'generated' ? 'Generated Image' : 
+                   selectedImage.type === 'edited' ? 'Edited Image' : 'Composite Image'}
                 </h3>
                 <button
                   onClick={closeModal}
@@ -151,7 +163,8 @@ export default function ImageGallery() {
               />
               <div className="mt-4 text-sm text-gray-600">
                 <p><span className="font-semibold">File:</span> {selectedImage.name}</p>
-                <p><span className="font-semibold">Type:</span> {selectedImage.type === 'generated' ? 'AI Generated' : 'AI Edited'}</p>
+                <p><span className="font-semibold">Type:</span> {selectedImage.type === 'generated' ? 'AI Generated' : 
+                   selectedImage.type === 'edited' ? 'AI Edited' : 'AI Composite'}</p>
               </div>
             </div>
           </div>

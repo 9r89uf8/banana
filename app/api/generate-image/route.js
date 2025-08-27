@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { geminiService, GenerationRefusedError } from '@/app/services/geminiService';
+import { geminiGenerateService, GenerationRefusedError } from '@/app/services/gemini';
 import { uploadToFirebaseStorage } from '@/app/middleware/firebaseStorage';
 import { v4 as uuidv4 } from 'uuid';
 
@@ -15,7 +15,7 @@ export async function POST(request) {
     }
 
     // Generate image using Gemini
-    const imageBuffer = await geminiService.generateImage(prompt);
+    const imageBuffer = await geminiGenerateService.generateImage(prompt);
 
     // Generate unique filename
     const fileName = `generated-images/${uuidv4()}.png`;
