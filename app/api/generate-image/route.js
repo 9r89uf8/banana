@@ -39,15 +39,32 @@ export async function POST(request) {
     const image1Buffer = validatedImages.image1.buffer;
     const image2Buffer = validatedImages.image2.buffer;
 
+    // Upload reference images to Firebase Storage first
+    console.log('Uploading reference images to Firebase...');
+    const generationId = uuidv4();
+    
+    const [referenceImage1Url, referenceImage2Url] = await Promise.all([
+      uploadToFirebaseStorage(
+        image1Buffer,
+        `reference-images/${generationId}-ref1.${validatedImages.image1.originalName?.split('.').pop() || 'jpg'}`,
+        validatedImages.image1.mimeType
+      ),
+      uploadToFirebaseStorage(
+        image2Buffer,
+        `reference-images/${generationId}-ref2.${validatedImages.image2.originalName?.split('.').pop() || 'jpg'}`,
+        validatedImages.image2.mimeType
+      )
+    ]);
+
     // Generate image using Gemini
     console.log('Calling Gemini service for image generation...');
     const imageBuffer = await geminiGenerateService.generateImage(image1Buffer, image2Buffer, prompt);
 
-    // Generate unique filename
+    // Generate unique filename for generated image
     console.log('Uploading generated image to Firebase...');
-    const fileName = `generated-images/${uuidv4()}.png`;
+    const fileName = `generated-images/${generationId}.png`;
 
-    // Upload to Firebase Storage
+    // Upload generated image to Firebase Storage
     const imageUrl = await uploadToFirebaseStorage(
       imageBuffer,
       fileName,
@@ -57,13 +74,17 @@ export async function POST(request) {
     console.log('Image generation completed successfully');
     return NextResponse.json({
       success: true,
+      generationId,
       imageUrl,
+      referenceImage1Url,
+      referenceImage2Url,
       prompt,
       fileName,
       processingSteps: [
+        'Reference images uploaded to storage',
         'Images converted to buffers',
         'AI generation with reference images and prompt',
-        'Result uploaded to storage'
+        'Generated image uploaded to storage'
       ]
     });
 

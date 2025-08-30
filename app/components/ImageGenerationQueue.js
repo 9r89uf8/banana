@@ -9,6 +9,8 @@ export default function ImageGenerationQueue() {
   const { 
     queue, 
     stats,
+    isLoading,
+    isOnline,
     clearCompleted, 
     clearFailed 
   } = useImageGenerationQueueContext();
@@ -34,6 +36,20 @@ export default function ImageGenerationQueue() {
     setIsModalOpen(false);
     setSelectedGeneration(null);
   };
+
+  if (isLoading) {
+    return (
+      <div className="text-center py-12 bg-gray-50 rounded-lg">
+        <div className="text-gray-400">
+          <div className="w-8 h-8 mx-auto mb-4 border-2 border-gray-300 border-t-blue-500 rounded-full animate-spin" />
+          <p className="text-lg font-medium text-gray-500">Loading generations...</p>
+          <p className="text-sm text-gray-400">
+            {isOnline ? 'Syncing with cloud storage' : 'Loading from local storage'}
+          </p>
+        </div>
+      </div>
+    );
+  }
 
   if (queue.length === 0) {
     return (
@@ -65,6 +81,12 @@ export default function ImageGenerationQueue() {
             {stats.failed > 0 && (
               <span className="bg-red-100 text-red-800 px-2 py-1 rounded-full">
                 Failed: {stats.failed}
+              </span>
+            )}
+            {!isOnline && (
+              <span className="bg-orange-100 text-orange-800 px-2 py-1 rounded-full flex items-center gap-1">
+                <div className="w-2 h-2 bg-orange-500 rounded-full" />
+                Offline
               </span>
             )}
           </div>
