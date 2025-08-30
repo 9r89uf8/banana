@@ -2,19 +2,18 @@
 
 import { useState, useEffect } from 'react';
 import { validateImageFile } from '@/app/utils/imageUtils';
-import { storage } from '@/app/utils/firebaseClient';
-import { ref, getBlob } from 'firebase/storage';
+import { GenerationQueueProvider, useGenerationQueueContext } from '@/app/contexts/GenerationQueueContext';
+import GenerationQueue from './GenerationQueue';
 
-export default function PersonCompositor() {
+function PersonCompositorInner() {
   const [mainImage, setMainImage] = useState(null);
   const [personImage, setPersonImage] = useState(null);
   const [mainImagePreview, setMainImagePreview] = useState(null);
   const [personImagePreview, setPersonImagePreview] = useState(null);
   const [prompt, setPrompt] = useState('');
-  const [isLoading, setIsLoading] = useState(false);
-  const [compositeResult, setCompositeResult] = useState(null);
   const [error, setError] = useState('');
-  const [isRefusal, setIsRefusal] = useState(false);
+
+  const { addToQueue, stats } = useGenerationQueueContext();
 
   const handleMainImageSelect = (event) => {
     const file = event.target.files[0];
@@ -22,7 +21,6 @@ export default function PersonCompositor() {
       try {
         validateImageFile(file);
         setMainImage(file);
-        setCompositeResult(null);
         setError('');
 
         // Clean up previous URL if it exists
@@ -45,7 +43,6 @@ export default function PersonCompositor() {
       try {
         validateImageFile(file);
         setPersonImage(file);
-        setCompositeResult(null);
         setError('');
 
         // Clean up previous URL if it exists
@@ -79,7 +76,7 @@ export default function PersonCompositor() {
     };
   }, [personImagePreview]);
 
-  const handleCompose = async () => {
+  const handleAddToQueue = async () => {
     if (!mainImage || !personImage) {
       setError('Please select both main image and person image');
       return;
@@ -90,43 +87,17 @@ export default function PersonCompositor() {
       return;
     }
 
-    setIsLoading(true);
-    setError('');
-    setIsRefusal(false);
-    setCompositeResult(null);
-
     try {
-      const formData = new FormData();
-      formData.append('mainImage', mainImage);
-      formData.append('personImage', personImage);
-      formData.append('prompt', prompt.trim());
-
-      const response = await fetch('/api/compose-people', {
-        method: 'POST',
-        body: formData,
-      });
-
-      const data = await response.json();
-
-      if (!response.ok) {
-        if (data.isRefusal) {
-          setIsRefusal(true);
-          setError(data.error || 'Image composition was refused');
-        } else {
-          setError(data.error || 'Failed to compose images');
-        }
-        return;
-      }
-
-      setCompositeResult(data);
+      await addToQueue(mainImage, personImage, prompt);
+      setError(''); // Clear any previous errors
+      // Optionally reset the form after adding to queue
+      // resetForm();
     } catch (err) {
-      setError(err.message || 'An unexpected error occurred');
-    } finally {
-      setIsLoading(false);
+      setError(err.message || 'Failed to add to generation queue');
     }
   };
 
-  const resetCompositor = () => {
+  const resetForm = () => {
     // Clean up object URLs before resetting
     if (mainImagePreview && mainImagePreview.startsWith('blob:')) {
       URL.revokeObjectURL(mainImagePreview);
@@ -140,90 +111,9 @@ export default function PersonCompositor() {
     setMainImagePreview(null);
     setPersonImagePreview(null);
     setPrompt('');
-    setCompositeResult(null);
     setError('');
-    setIsRefusal(false);
   };
 
-  const downloadOriginal = async (image) => {
-    try {
-      const imageRef = ref(storage, image.fileName);
-      const blob = await getBlob(imageRef);
-      const url = URL.createObjectURL(blob);
-      const link = document.createElement('a');
-      link.href = url;
-      link.download = image.fileName.split('/').pop();
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-      URL.revokeObjectURL(url);
-    } catch (error) {
-      console.error('Error downloading image:', error);
-      setError('Failed to download image');
-    }
-  };
-
-  const download916AspectRatio = async (image) => {
-    try {
-      const imageRef = ref(storage, image.fileName);
-      const blob = await getBlob(imageRef);
-      const objectUrl = URL.createObjectURL(blob);
-
-      const img = new Image();
-      await new Promise((resolve, reject) => {
-        img.onload = resolve;
-        img.onerror = () => reject(new Error('Failed to load image'));
-        img.src = objectUrl;
-      });
-
-      const canvas = document.createElement('canvas');
-      const ctx = canvas.getContext('2d');
-
-      const targetRatio = 9 / 16;
-      const imgRatio = img.width / img.height;
-
-      let sx, sy, sw, sh;
-      if (imgRatio > targetRatio) {
-        sh = img.height;
-        sw = img.height * targetRatio;
-        sx = (img.width - sw) / 2;
-        sy = 0;
-      } else {
-        sw = img.width;
-        sh = img.width / targetRatio;
-        sx = 0;
-        sy = (img.height - sh) / 2;
-      }
-
-      const targetHeight = 1600;
-      const targetWidth = Math.round(targetHeight * targetRatio);
-      canvas.width = targetWidth;
-      canvas.height = targetHeight;
-
-      ctx.drawImage(img, sx, sy, sw, sh, 0, 0, targetWidth, targetHeight);
-
-      await new Promise((resolve, reject) => {
-        canvas.toBlob((outputBlob) => {
-          if (!outputBlob) return reject(new Error('toBlob failed'));
-          const outputUrl = URL.createObjectURL(outputBlob);
-          const link = document.createElement('a');
-          link.href = outputUrl;
-          const fileName = image.fileName.split('/').pop().replace(/\.[^/.]+$/, '') + '_9x16.jpg';
-          link.download = fileName;
-          document.body.appendChild(link);
-          link.click();
-          document.body.removeChild(link);
-          URL.revokeObjectURL(outputUrl);
-          resolve();
-        }, 'image/jpeg', 0.9);
-      });
-
-      URL.revokeObjectURL(objectUrl);
-    } catch (error) {
-      console.error('Error downloading 9:16 image:', error);
-      setError('Failed to create 9:16 aspect ratio image');
-    }
-  };
 
   return (
     <div className="w-full max-w-6xl mx-auto">
@@ -242,7 +132,6 @@ export default function PersonCompositor() {
                 accept="image/*"
                 onChange={handleMainImageSelect}
                 className="block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-md file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100"
-                disabled={isLoading}
               />
               {mainImagePreview && (
                 <div className="mt-3">
@@ -264,7 +153,6 @@ export default function PersonCompositor() {
                 accept="image/*"
                 onChange={handlePersonImageSelect}
                 className="block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-md file:border-0 file:text-sm file:font-semibold file:bg-green-50 file:text-green-700 hover:file:bg-green-100"
-                disabled={isLoading}
               />
               {personImagePreview && (
                 <div className="mt-3">
@@ -290,7 +178,6 @@ export default function PersonCompositor() {
               placeholder="Example: Place the person standing beside them on the right, with their arm around their shoulder, like close friends at a party"
               className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-none"
               rows="4"
-              disabled={isLoading}
             />
             <p className="mt-2 text-xs text-gray-500">
               Describe the position, pose, interaction, and any other details about how the person should be integrated into the main image.
@@ -300,114 +187,58 @@ export default function PersonCompositor() {
           {/* Action Buttons */}
           <div className="flex space-x-4">
             <button
-              onClick={handleCompose}
-              disabled={isLoading || !mainImage || !personImage || !prompt.trim()}
+              onClick={handleAddToQueue}
+              disabled={!mainImage || !personImage || !prompt.trim()}
               className="flex-1 bg-indigo-600 hover:bg-indigo-700 disabled:bg-gray-400 text-white font-semibold py-3 px-6 rounded-md transition-colors duration-200"
             >
-              {isLoading ? (
-                <div className="flex items-center justify-center">
-                  <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white mr-2"></div>
-                  Composing People...
-                </div>
-              ) : (
-                'Compose People'
+              Add to Queue
+              {stats.active > 0 && (
+                <span className="ml-2 bg-white bg-opacity-20 text-white text-sm px-2 py-1 rounded-full">
+                  {stats.active} active
+                </span>
               )}
             </button>
 
             <button
-              onClick={resetCompositor}
-              disabled={isLoading}
+              onClick={resetForm}
               className="px-6 py-3 border border-gray-300 text-gray-700 font-semibold rounded-md hover:bg-gray-50 transition-colors duration-200"
             >
-              Reset
+              Clear Form
             </button>
           </div>
 
           {/* Error Display */}
           {error && (
-            <div className={`border px-4 py-3 rounded-md ${
-              isRefusal 
-                ? 'bg-orange-50 border-orange-200 text-orange-700'
-                : 'bg-red-50 border-red-200 text-red-700'
-            }`}>
+            <div className="border px-4 py-3 rounded-md bg-red-50 border-red-200 text-red-700">
               <div className="flex items-start">
                 <div className="flex-shrink-0">
-                  {isRefusal ? (
-                    <svg className="h-5 w-5 text-orange-400 mt-0.5" viewBox="0 0 20 20" fill="currentColor">
-                      <path fillRule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
-                    </svg>
-                  ) : (
-                    <svg className="h-5 w-5 text-red-400 mt-0.5" viewBox="0 0 20 20" fill="currentColor">
-                      <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" />
-                    </svg>
-                  )}
+                  <svg className="h-5 w-5 text-red-400 mt-0.5" viewBox="0 0 20 20" fill="currentColor">
+                    <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" />
+                  </svg>
                 </div>
                 <div className="ml-3">
-                  <p className="text-sm font-medium">
-                    {isRefusal ? 'Composition Refused' : 'Error'}
-                  </p>
+                  <p className="text-sm font-medium">Error</p>
                   <p className="text-sm mt-1">{error}</p>
-                  {isRefusal && (
-                    <div className="mt-2 text-sm">
-                      <p className="font-medium">Try adjusting your prompt:</p>
-                      <ul className="mt-1 ml-4 list-disc space-y-1">
-                        <li>Ensure both images contain clearly visible people</li>
-                        <li>Use clear, descriptive language for positioning</li>
-                        <li>Avoid inappropriate or impossible requests</li>
-                      </ul>
-                    </div>
-                  )}
-                </div>
-              </div>
-            </div>
-          )}
-
-          {/* Result Display */}
-          {compositeResult && (
-            <div className="mt-6">
-              <h3 className="text-lg font-semibold text-gray-800 mb-3">Composite Result</h3>
-              <div className="bg-gray-50 rounded-lg p-4">
-                <img
-                  src={compositeResult.imageUrl}
-                  alt="Composite result"
-                  className="w-full max-w-lg rounded-lg shadow-md mx-auto"
-                />
-                <div className="mt-3 text-sm text-gray-600">
-                  <p><span className="font-semibold">Prompt:</span> {compositeResult.prompt || prompt}</p>
-                </div>
-                
-                <div className="mt-6 pt-4 border-t border-gray-200">
-                  <h4 className="text-lg font-semibold text-gray-800 mb-3">Download Options</h4>
-                  <div className="flex flex-col sm:flex-row gap-3">
-                    <button
-                      onClick={() => downloadOriginal(compositeResult)}
-                      className="flex-1 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-md transition-colors duration-200 flex items-center justify-center gap-2"
-                    >
-                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                      </svg>
-                      Original Size
-                    </button>
-                    
-                    <button
-                      onClick={() => download916AspectRatio(compositeResult)}
-                      className="flex-1 px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-md transition-colors duration-200 flex items-center justify-center gap-2"
-                    >
-                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
-                      </svg>
-                      9:16 Aspect Ratio
-                    </button>
-                  </div>
-                  <p className="text-xs text-gray-500 mt-2">
-                    9:16 format is optimized for mobile and social media vertical displays
-                  </p>
                 </div>
               </div>
             </div>
           )}
         </div>
       </div>
+
+      {/* Generation Queue */}
+      <div className="mt-6">
+        <GenerationQueue />
+      </div>
     </div>
+  );
+}
+
+// Main component that provides the queue context
+export default function PersonCompositor() {
+  return (
+    <GenerationQueueProvider>
+      <PersonCompositorInner />
+    </GenerationQueueProvider>
   );
 }
