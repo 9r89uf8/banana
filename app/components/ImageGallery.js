@@ -4,7 +4,7 @@ import { useState, useEffect } from 'react';
 import { storage } from '@/app/utils/firebaseClient';
 import { ref, listAll, getDownloadURL, getBlob, getMetadata } from 'firebase/storage';
 
-export default function ImageGallery({ onEditImage }) {
+export default function ImageGallery() {
   const [images, setImages] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState('');
@@ -20,16 +20,14 @@ export default function ImageGallery({ onEditImage }) {
 
     try {
       const generatedRef = ref(storage, 'generated-images');
-      const editedRef = ref(storage, 'edited-images');
       const compositeRef = ref(storage, 'composite-images');
       
-      const [generatedList, editedList, compositeList] = await Promise.all([
+      const [generatedList, compositeList] = await Promise.all([
         listAll(generatedRef),
-        listAll(editedRef),
         listAll(compositeRef)
       ]);
 
-      const allItems = [...generatedList.items, ...editedList.items, ...compositeList.items];
+      const allItems = [...generatedList.items, ...compositeList.items];
       
       const imagePromises = allItems.map(async (item) => {
         const [url, metadata] = await Promise.all([
@@ -38,9 +36,7 @@ export default function ImageGallery({ onEditImage }) {
         ]);
         
         let type = 'generated';
-        if (item.fullPath.includes('edited-images')) {
-          type = 'edited';
-        } else if (item.fullPath.includes('composite-images')) {
+        if (item.fullPath.includes('composite-images')) {
           type = 'composite';
         }
         
@@ -209,11 +205,9 @@ export default function ImageGallery({ onEditImage }) {
                   </div>
                   <div className="absolute top-2 right-2">
                     <span className={`px-2 py-1 text-xs font-semibold rounded-full text-white ${
-                      image.type === 'generated' ? 'bg-green-500' : 
-                      image.type === 'edited' ? 'bg-blue-500' : 'bg-purple-500'
+                      image.type === 'generated' ? 'bg-green-500' : 'bg-purple-500'
                     }`}>
-                      {image.type === 'generated' ? 'Generated' : 
-                       image.type === 'edited' ? 'Edited' : 'Composite'}
+                      {image.type === 'generated' ? 'Generated' : 'Composite'}
                     </span>
                   </div>
                 </div>
@@ -229,8 +223,7 @@ export default function ImageGallery({ onEditImage }) {
             <div className="p-6">
               <div className="flex justify-between items-center mb-4">
                 <h3 className="text-xl font-semibold text-gray-800">
-                  {selectedImage.type === 'generated' ? 'Generated Image' : 
-                   selectedImage.type === 'edited' ? 'Edited Image' : 'Composite Image'}
+                  {selectedImage.type === 'generated' ? 'Generated Image' : 'Composite Image'}
                 </h3>
                 <button
                   onClick={closeModal}
@@ -246,27 +239,9 @@ export default function ImageGallery({ onEditImage }) {
               />
               <div className="mt-4 text-sm text-gray-600">
                 <p><span className="font-semibold">File:</span> {selectedImage.name}</p>
-                <p><span className="font-semibold">Type:</span> {selectedImage.type === 'generated' ? 'AI Generated' : 
-                   selectedImage.type === 'edited' ? 'AI Edited' : 'AI Composite'}</p>
+                <p><span className="font-semibold">Type:</span> {selectedImage.type === 'generated' ? 'AI Generated' : 'AI Composite'}</p>
               </div>
               
-              {onEditImage && (
-                <div className="mt-6 pt-4 border-t border-gray-200">
-                  <h4 className="text-lg font-semibold text-gray-800 mb-3">Edit Options</h4>
-                  <button
-                    onClick={() => {
-                      onEditImage(selectedImage);
-                      closeModal();
-                    }}
-                    className="w-full px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-md transition-colors duration-200 flex items-center justify-center gap-2"
-                  >
-                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
-                    </svg>
-                    Edit Image
-                  </button>
-                </div>
-              )}
 
               <div className="mt-6 pt-4 border-t border-gray-200">
                 <h4 className="text-lg font-semibold text-gray-800 mb-3">Download Options</h4>

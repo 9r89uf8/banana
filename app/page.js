@@ -2,24 +2,17 @@
 
 import { useState } from 'react';
 import ImageGenerator from './components/ImageGenerator';
-import ImageEditor from './components/ImageEditor';
 import ImageGallery from './components/ImageGallery';
 
 export default function Home() {
   const [activeTab, setActiveTab] = useState('generate');
-  const [imageToEdit, setImageToEdit] = useState(null);
-
-  const handleEditImage = (image) => {
-    setImageToEdit(image);
-    setActiveTab('edit');
-  };
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100">
       <div className="container mx-auto px-4 py-8">
         <header className="text-center mb-8">
           <h1 className="text-4xl font-bold text-gray-800 mb-2">AI Image Studio</h1>
-          <p className="text-gray-600 text-lg">Generate, edit, and compose images with Gemini AI</p>
+          <p className="text-gray-600 text-lg">Generate and compose images with Gemini AI</p>
         </header>
 
         <nav className="flex justify-center mb-8">
@@ -33,16 +26,6 @@ export default function Home() {
               }`}
             >
               Generate
-            </button>
-            <button
-              onClick={() => setActiveTab('edit')}
-              className={`px-6 py-3 rounded-md font-semibold transition-colors duration-200 ${
-                activeTab === 'edit'
-                  ? 'bg-blue-600 text-white'
-                  : 'text-gray-600 hover:text-blue-600'
-              }`}
-            >
-              Edit
             </button>
             <button
               onClick={() => setActiveTab('gallery')}
@@ -59,8 +42,7 @@ export default function Home() {
 
         <main className="flex justify-center">
           {activeTab === 'generate' && <ImageGenerator />}
-          {activeTab === 'edit' && <ImageEditor initialImage={imageToEdit} />}
-          {activeTab === 'gallery' && <ImageGallery onEditImage={handleEditImage} />}
+          {activeTab === 'gallery' && <ImageGallery />}
         </main>
       </div>
     </div>
