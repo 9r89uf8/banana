@@ -5,6 +5,7 @@ import ImageGenerator from './components/ImageGenerator';
 import ImageEditor from './components/ImageEditor';
 import ImageGallery from './components/ImageGallery';
 import ObjectCompositor from './components/ObjectCompositor';
+import PersonCompositor from './components/PersonCompositor';
 
 export default function Home() {
   const [activeTab, setActiveTab] = useState('generate');
@@ -56,6 +57,16 @@ export default function Home() {
               Compose
             </button>
             <button
+              onClick={() => setActiveTab('people')}
+              className={`px-6 py-3 rounded-md font-semibold transition-colors duration-200 ${
+                activeTab === 'people'
+                  ? 'bg-blue-600 text-white'
+                  : 'text-gray-600 hover:text-blue-600'
+              }`}
+            >
+              People
+            </button>
+            <button
               onClick={() => setActiveTab('gallery')}
               className={`px-6 py-3 rounded-md font-semibold transition-colors duration-200 ${
                 activeTab === 'gallery'
@@ -72,6 +83,7 @@ export default function Home() {
           {activeTab === 'generate' && <ImageGenerator />}
           {activeTab === 'edit' && <ImageEditor initialImage={imageToEdit} />}
           {activeTab === 'compose' && <ObjectCompositor />}
+          {activeTab === 'people' && <PersonCompositor />}
           {activeTab === 'gallery' && <ImageGallery onEditImage={handleEditImage} />}
         </main>
       </div>

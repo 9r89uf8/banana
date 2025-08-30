@@ -3,3 +3,4 @@ export { GeminiBaseService, GenerationRefusedError } from './GeminiBaseService.j
 export { GeminiGenerateService, geminiGenerateService } from './GeminiGenerateService.js';
 export { GeminiEditService, geminiEditService } from './GeminiEditService.js';
 export { GeminiComposeService, geminiComposeService } from './GeminiComposeService.js';
+export { GeminiPersonComposeService, geminiPersonComposeService } from './GeminiPersonComposeService.js';

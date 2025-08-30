@@ -5,74 +5,145 @@ import { validateImageFile } from '@/app/utils/imageUtils';
 import { storage } from '@/app/utils/firebaseClient';
 import { ref, getBlob } from 'firebase/storage';
 
-export default function ImageGenerator() {
-  const [image1, setImage1] = useState(null);
-  const [image2, setImage2] = useState(null);
-  const [image1Preview, setImage1Preview] = useState(null);
-  const [image2Preview, setImage2Preview] = useState(null);
+export default function PersonCompositor() {
+  const [mainImage, setMainImage] = useState(null);
+  const [personImage, setPersonImage] = useState(null);
+  const [mainImagePreview, setMainImagePreview] = useState(null);
+  const [personImagePreview, setPersonImagePreview] = useState(null);
   const [prompt, setPrompt] = useState('');
   const [isLoading, setIsLoading] = useState(false);
-  const [generatedImage, setGeneratedImage] = useState(null);
+  const [compositeResult, setCompositeResult] = useState(null);
   const [error, setError] = useState('');
   const [isRefusal, setIsRefusal] = useState(false);
 
-  const handleImage1Select = (event) => {
+  const handleMainImageSelect = (event) => {
     const file = event.target.files[0];
     if (file) {
       try {
         validateImageFile(file);
-        setImage1(file);
-        setGeneratedImage(null);
+        setMainImage(file);
+        setCompositeResult(null);
         setError('');
 
-        if (image1Preview && image1Preview.startsWith('blob:')) {
-          URL.revokeObjectURL(image1Preview);
+        // Clean up previous URL if it exists
+        if (mainImagePreview && mainImagePreview.startsWith('blob:')) {
+          URL.revokeObjectURL(mainImagePreview);
         }
 
+        // Create new object URL
         const objectURL = URL.createObjectURL(file);
-        setImage1Preview(objectURL);
+        setMainImagePreview(objectURL);
       } catch (err) {
         setError(err.message);
       }
     }
   };
 
-  const handleImage2Select = (event) => {
+  const handlePersonImageSelect = (event) => {
     const file = event.target.files[0];
     if (file) {
       try {
         validateImageFile(file);
-        setImage2(file);
-        setGeneratedImage(null);
+        setPersonImage(file);
+        setCompositeResult(null);
         setError('');
 
-        if (image2Preview && image2Preview.startsWith('blob:')) {
-          URL.revokeObjectURL(image2Preview);
+        // Clean up previous URL if it exists
+        if (personImagePreview && personImagePreview.startsWith('blob:')) {
+          URL.revokeObjectURL(personImagePreview);
         }
 
+        // Create new object URL
         const objectURL = URL.createObjectURL(file);
-        setImage2Preview(objectURL);
+        setPersonImagePreview(objectURL);
       } catch (err) {
         setError(err.message);
       }
     }
   };
 
+  // Cleanup object URLs on component unmount or when images change
   useEffect(() => {
     return () => {
-      if (image1Preview && image1Preview.startsWith('blob:')) {
-        URL.revokeObjectURL(image1Preview);
+      if (mainImagePreview && mainImagePreview.startsWith('blob:')) {
+        URL.revokeObjectURL(mainImagePreview);
       }
     };
-  }, [image1Preview]);
+  }, [mainImagePreview]);
 
   useEffect(() => {
     return () => {
-      if (image2Preview && image2Preview.startsWith('blob:')) {
-        URL.revokeObjectURL(image2Preview);
+      if (personImagePreview && personImagePreview.startsWith('blob:')) {
+        URL.revokeObjectURL(personImagePreview);
       }
     };
-  }, [image2Preview]);
+  }, [personImagePreview]);
+
+  const handleCompose = async () => {
+    if (!mainImage || !personImage) {
+      setError('Please select both main image and person image');
+      return;
+    }
+
+    if (!prompt.trim()) {
+      setError('Please describe how to add the person to the image');
+      return;
+    }
+
+    setIsLoading(true);
+    setError('');
+    setIsRefusal(false);
+    setCompositeResult(null);
+
+    try {
+      const formData = new FormData();
+      formData.append('mainImage', mainImage);
+      formData.append('personImage', personImage);
+      formData.append('prompt', prompt.trim());
+
+      const response = await fetch('/api/compose-people', {
+        method: 'POST',
+        body: formData,
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        if (data.isRefusal) {
+          setIsRefusal(true);
+          setError(data.error || 'Image composition was refused');
+        } else {
+          setError(data.error || 'Failed to compose images');
+        }
+        return;
+      }
+
+      setCompositeResult(data);
+    } catch (err) {
+      setError(err.message || 'An unexpected error occurred');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const resetCompositor = () => {
+    // Clean up object URLs before resetting
+    if (mainImagePreview && mainImagePreview.startsWith('blob:')) {
+      URL.revokeObjectURL(mainImagePreview);
+    }
+    if (personImagePreview && personImagePreview.startsWith('blob:')) {
+      URL.revokeObjectURL(personImagePreview);
+    }
+
+    setMainImage(null);
+    setPersonImage(null);
+    setMainImagePreview(null);
+    setPersonImagePreview(null);
+    setPrompt('');
+    setCompositeResult(null);
+    setError('');
+    setIsRefusal(false);
+  };
 
   const downloadOriginal = async (image) => {
     try {
@@ -154,95 +225,30 @@ export default function ImageGenerator() {
     }
   };
 
-  const handleGenerate = async () => {
-    if (!image1 || !image2) {
-      setError('Please select both reference images');
-      return;
-    }
-
-    if (!prompt.trim()) {
-      setError('Please enter a prompt describing how to use the reference images');
-      return;
-    }
-
-    setIsLoading(true);
-    setError('');
-    setIsRefusal(false);
-    setGeneratedImage(null);
-
-    try {
-      const formData = new FormData();
-      formData.append('image1', image1);
-      formData.append('image2', image2);
-      formData.append('prompt', prompt.trim());
-
-      const response = await fetch('/api/generate-image', {
-        method: 'POST',
-        body: formData,
-      });
-
-      const data = await response.json();
-
-      if (!response.ok) {
-        if (data.isRefusal) {
-          setIsRefusal(true);
-          setError(data.error || 'Image generation was refused');
-        } else {
-          setError(data.error || 'Failed to generate image');
-        }
-        return;
-      }
-
-      setGeneratedImage(data);
-    } catch (err) {
-      setError(err.message || 'An unexpected error occurred');
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  const resetGenerator = () => {
-    if (image1Preview && image1Preview.startsWith('blob:')) {
-      URL.revokeObjectURL(image1Preview);
-    }
-    if (image2Preview && image2Preview.startsWith('blob:')) {
-      URL.revokeObjectURL(image2Preview);
-    }
-
-    setImage1(null);
-    setImage2(null);
-    setImage1Preview(null);
-    setImage2Preview(null);
-    setPrompt('');
-    setGeneratedImage(null);
-    setError('');
-    setIsRefusal(false);
-  };
-
   return (
     <div className="w-full max-w-6xl mx-auto">
       <div className="bg-white rounded-lg shadow-lg p-6">
-        <h2 className="text-2xl font-bold text-gray-800 mb-6">Generate Image</h2>
-        
+        <h2 className="text-2xl font-bold text-gray-800 mb-6">Compose People Together</h2>
+
         <div className="space-y-6">
           {/* Image Upload Section */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">
-                Reference Image 1
+                Main Image
               </label>
               <input
                 type="file"
                 accept="image/*"
-                onChange={handleImage1Select}
+                onChange={handleMainImageSelect}
                 className="block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-md file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100"
                 disabled={isLoading}
               />
-              {image1Preview && (
+              {mainImagePreview && (
                 <div className="mt-3">
                   <img
-                    src={image1Preview}
-                    alt="Reference image 1"
+                    src={mainImagePreview}
+                    alt="Main image"
                     className="w-full max-w-sm rounded-lg shadow-md"
                   />
                 </div>
@@ -251,20 +257,20 @@ export default function ImageGenerator() {
 
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">
-                Reference Image 2
+                Person to Add
               </label>
               <input
                 type="file"
                 accept="image/*"
-                onChange={handleImage2Select}
+                onChange={handlePersonImageSelect}
                 className="block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-md file:border-0 file:text-sm file:font-semibold file:bg-green-50 file:text-green-700 hover:file:bg-green-100"
                 disabled={isLoading}
               />
-              {image2Preview && (
+              {personImagePreview && (
                 <div className="mt-3">
                   <img
-                    src={image2Preview}
-                    alt="Reference image 2"
+                    src={personImagePreview}
+                    alt="Person to add"
                     className="w-full max-w-sm rounded-lg shadow-md"
                   />
                 </div>
@@ -272,38 +278,44 @@ export default function ImageGenerator() {
             </div>
           </div>
 
+          {/* Prompt Field */}
           <div>
             <label htmlFor="prompt" className="block text-sm font-medium text-gray-700 mb-2">
-              Describe how to use the reference images to generate a new image
+              How should the person be added?
             </label>
             <textarea
               id="prompt"
               value={prompt}
               onChange={(e) => setPrompt(e.target.value)}
-              placeholder="Example: Combine elements from both images to create a fantasy landscape, or merge the subjects from both images into a single scene..."
-              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent min-h-[100px] resize-none"
+              placeholder="Example: Place the person standing beside them on the right, with their arm around their shoulder, like close friends at a party"
+              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-none"
+              rows="4"
               disabled={isLoading}
             />
+            <p className="mt-2 text-xs text-gray-500">
+              Describe the position, pose, interaction, and any other details about how the person should be integrated into the main image.
+            </p>
           </div>
 
+          {/* Action Buttons */}
           <div className="flex space-x-4">
             <button
-              onClick={handleGenerate}
-              disabled={isLoading || !image1 || !image2 || !prompt.trim()}
-              className="flex-1 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-400 text-white font-semibold py-3 px-6 rounded-md transition-colors duration-200"
+              onClick={handleCompose}
+              disabled={isLoading || !mainImage || !personImage || !prompt.trim()}
+              className="flex-1 bg-indigo-600 hover:bg-indigo-700 disabled:bg-gray-400 text-white font-semibold py-3 px-6 rounded-md transition-colors duration-200"
             >
               {isLoading ? (
                 <div className="flex items-center justify-center">
                   <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white mr-2"></div>
-                  Generating...
+                  Composing People...
                 </div>
               ) : (
-                'Generate Image'
+                'Compose People'
               )}
             </button>
 
             <button
-              onClick={resetGenerator}
+              onClick={resetCompositor}
               disabled={isLoading}
               className="px-6 py-3 border border-gray-300 text-gray-700 font-semibold rounded-md hover:bg-gray-50 transition-colors duration-200"
             >
@@ -311,6 +323,7 @@ export default function ImageGenerator() {
             </button>
           </div>
 
+          {/* Error Display */}
           {error && (
             <div className={`border px-4 py-3 rounded-md ${
               isRefusal 
@@ -331,18 +344,16 @@ export default function ImageGenerator() {
                 </div>
                 <div className="ml-3">
                   <p className="text-sm font-medium">
-                    {isRefusal ? 'Generation Refused' : 'Error'}
+                    {isRefusal ? 'Composition Refused' : 'Error'}
                   </p>
                   <p className="text-sm mt-1">{error}</p>
                   {isRefusal && (
                     <div className="mt-2 text-sm">
-                      <p className="font-medium">Try modifying your approach:</p>
+                      <p className="font-medium">Try adjusting your prompt:</p>
                       <ul className="mt-1 ml-4 list-disc space-y-1">
-                        <li>Use more general, descriptive language in your prompt</li>
-                        <li>Ensure reference images don't contain specific people or copyrighted content</li>
-                        <li>Focus on artistic style and visual elements to combine</li>
-                        <li>Keep content appropriate and family-friendly</li>
-                        <li>Try different reference images if current ones are problematic</li>
+                        <li>Ensure both images contain clearly visible people</li>
+                        <li>Use clear, descriptive language for positioning</li>
+                        <li>Avoid inappropriate or impossible requests</li>
                       </ul>
                     </div>
                   )}
@@ -351,24 +362,25 @@ export default function ImageGenerator() {
             </div>
           )}
 
-          {generatedImage && (
+          {/* Result Display */}
+          {compositeResult && (
             <div className="mt-6">
-              <h3 className="text-lg font-semibold text-gray-800 mb-3">Generated Image</h3>
+              <h3 className="text-lg font-semibold text-gray-800 mb-3">Composite Result</h3>
               <div className="bg-gray-50 rounded-lg p-4">
                 <img
-                  src={generatedImage.imageUrl}
-                  alt={generatedImage.prompt}
-                  className="w-full rounded-lg shadow-md"
+                  src={compositeResult.imageUrl}
+                  alt="Composite result"
+                  className="w-full max-w-lg rounded-lg shadow-md mx-auto"
                 />
-                <p className="text-sm text-gray-600 mt-3">
-                  <span className="font-semibold">Prompt:</span> {generatedImage.prompt}
-                </p>
+                <div className="mt-3 text-sm text-gray-600">
+                  <p><span className="font-semibold">Prompt:</span> {compositeResult.prompt || prompt}</p>
+                </div>
                 
                 <div className="mt-6 pt-4 border-t border-gray-200">
                   <h4 className="text-lg font-semibold text-gray-800 mb-3">Download Options</h4>
                   <div className="flex flex-col sm:flex-row gap-3">
                     <button
-                      onClick={() => downloadOriginal(generatedImage)}
+                      onClick={() => downloadOriginal(compositeResult)}
                       className="flex-1 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-md transition-colors duration-200 flex items-center justify-center gap-2"
                     >
                       <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -378,8 +390,8 @@ export default function ImageGenerator() {
                     </button>
                     
                     <button
-                      onClick={() => download916AspectRatio(generatedImage)}
-                      className="flex-1 px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-md transition-colors duration-200 flex items-center justify-center gap-2"
+                      onClick={() => download916AspectRatio(compositeResult)}
+                      className="flex-1 px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-md transition-colors duration-200 flex items-center justify-center gap-2"
                     >
                       <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />

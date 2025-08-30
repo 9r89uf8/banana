@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { geminiGenerateService, GenerationRefusedError } from '@/app/services/gemini';
+import { geminiPersonComposeService, GenerationRefusedError } from '@/app/services/gemini';
 import { uploadToFirebaseStorage } from '@/app/middleware/firebaseStorage';
-import { ImageValidationMiddleware } from '@/app/middleware/imageValidationMiddleware';
+import { ImageValidationMiddleware, validators } from '@/app/middleware/imageValidationMiddleware';
 import { v4 as uuidv4 } from 'uuid';
 
 export async function POST(request) {
@@ -19,7 +19,7 @@ export async function POST(request) {
     // Validate images
     const validatedImages = await ImageValidationMiddleware.validateImages(
       formData,
-      ['image1', 'image2']
+      ['mainImage', 'personImage']
     );
     
     // Get and validate prompt
@@ -28,47 +28,49 @@ export async function POST(request) {
       throw new Error('Missing required parameter: prompt');
     }
 
-    console.log('Processing image generation request:', {
+    console.log('Processing people composition request:', {
       prompt: prompt.substring(0, 100) + '...',
-      image1Size: validatedImages.image1.size,
-      image2Size: validatedImages.image2.size,
-      clientIP: clientIP.substring(0, 8) + '***'
+      mainImageSize: validatedImages.mainImage.size,
+      personImageSize: validatedImages.personImage.size,
+      clientIP: clientIP.substring(0, 8) + '***' // Log partial IP for debugging
     });
 
     // Use validated image buffers
-    const image1Buffer = validatedImages.image1.buffer;
-    const image2Buffer = validatedImages.image2.buffer;
+    const mainImageBuffer = validatedImages.mainImage.buffer;
+    const personImageBuffer = validatedImages.personImage.buffer;
 
-    // Generate image using Gemini
-    console.log('Calling Gemini service for image generation...');
-    const imageBuffer = await geminiGenerateService.generateImage(image1Buffer, image2Buffer, prompt);
+    // Use Gemini service to compose the people with prompt
+    console.log('Calling Gemini service for people composition...');
+    const compositeImageBuffer = await geminiPersonComposeService.composePeople(
+      mainImageBuffer,
+      personImageBuffer,
+      prompt
+    );
 
-    // Generate unique filename
-    console.log('Uploading generated image to Firebase...');
-    const fileName = `generated-images/${uuidv4()}.png`;
-
-    // Upload to Firebase Storage
+    // Upload result to Firebase Storage
+    console.log('Uploading composite result to Firebase...');
+    const fileName = `people-compositions/${uuidv4()}.png`;
     const imageUrl = await uploadToFirebaseStorage(
-      imageBuffer,
+      compositeImageBuffer,
       fileName,
       'image/png'
     );
 
-    console.log('Image generation completed successfully');
+    console.log('People composition completed successfully');
     return NextResponse.json({
       success: true,
       imageUrl,
-      prompt,
       fileName,
+      prompt,
       processingSteps: [
         'Images converted to buffers',
-        'AI generation with reference images and prompt',
+        'AI composition with natural language prompt',
         'Result uploaded to storage'
       ]
     });
 
   } catch (error) {
-    console.error('Error in generate-image API:', error);
+    console.error('Error in compose-people API:', error);
     
     // Handle validation and rate limiting errors
     if (error.message.includes('Rate limit') || 
@@ -97,14 +99,14 @@ export async function POST(request) {
     // Handle processing errors
     if (error.message.includes('Failed to')) {
       return NextResponse.json(
-        { error: `Image generation failed: ${error.message}` },
+        { error: `People composition failed: ${error.message}` },
         { status: 400 }
       );
     }
     
     // Handle other errors as server errors
     return NextResponse.json(
-      { error: error.message || 'Failed to generate image' },
+      { error: error.message || 'Failed to compose people' },
       { status: 500 }
     );
   }

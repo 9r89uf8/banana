@@ -5,12 +5,15 @@ export class GeminiGenerateService extends GeminiBaseService {
     super();
   }
 
-  async generateImage(prompt) {
+  async generateImage(image1Buffer, image2Buffer, prompt) {
     try {
+      const image1Part = this._bufferToInlinePart(image1Buffer);
+      const image2Part = this._bufferToInlinePart(image2Buffer);
+
       const contents = [
         {
           role: 'user',
-          parts: [{ text: prompt }],
+          parts: [image1Part, image2Part, { text: prompt }],
         },
       ];
 
