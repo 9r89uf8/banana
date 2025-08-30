@@ -4,11 +4,13 @@ import { useEffect, useRef, useState } from 'react';
 import { storage } from '@/app/utils/firebaseClient';
 import { ref, getBlob } from 'firebase/storage';
 import { useImageGenerationQueueContext } from '@/app/contexts/ImageGenerationQueueContext';
+import { useImageGeneratorContext } from '@/app/contexts/ImageGeneratorContext';
 import FullscreenImageViewer from './FullscreenImageViewer';
 
 export default function ImageGenerationModal({ generation, isOpen, onClose }) {
   const modalRef = useRef();
   const { runAgain } = useImageGenerationQueueContext();
+  const { setGeneratedAsReference1, setGeneratedAsReference2 } = useImageGeneratorContext();
   const [fullscreenOpen, setFullscreenOpen] = useState(false);
 
   // Handle escape key
@@ -128,6 +130,23 @@ export default function ImageGenerationModal({ generation, isOpen, onClose }) {
     setFullscreenOpen(false);
   };
 
+  const handleUseAsReference1 = async () => {
+    try {
+      await setGeneratedAsReference1(generation);
+      onClose(); // Close modal after setting reference
+    } catch (err) {
+      console.error('Failed to set as reference 1:', err);
+    }
+  };
+
+  const handleUseAsReference2 = async () => {
+    try {
+      await setGeneratedAsReference2(generation);
+      onClose(); // Close modal after setting reference
+    } catch (err) {
+      console.error('Failed to set as reference 2:', err);
+    }
+  };
 
   if (!isOpen) return null;
 
@@ -214,43 +233,72 @@ export default function ImageGenerationModal({ generation, isOpen, onClose }) {
 
         {/* Modal Footer */}
         <div className="border-t border-gray-200 p-4">
-          <div className="flex flex-col sm:flex-row gap-3">
-            <button
-              onClick={downloadOriginal}
-              className="flex-1 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-md transition-colors duration-200 flex items-center justify-center gap-2"
-            >
-              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-              </svg>
-              Download Original
-            </button>
-            
-            <button
-              onClick={download916AspectRatio}
-              className="flex-1 px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-md transition-colors duration-200 flex items-center justify-center gap-2"
-            >
-              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
-              </svg>
-              Download 9:16
-            </button>
+          <div className="flex flex-col gap-3">
+            {/* First row: Download buttons */}
+            <div className="flex gap-3">
+              <button
+                onClick={downloadOriginal}
+                className="flex-1 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-md transition-colors duration-200 flex items-center justify-center gap-2"
+              >
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                </svg>
+                Download Original
+              </button>
+              
+              <button
+                onClick={download916AspectRatio}
+                className="flex-1 px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-md transition-colors duration-200 flex items-center justify-center gap-2"
+              >
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                </svg>
+                Download 9:16
+              </button>
+            </div>
 
-            <button
-              onClick={handleRunAgain}
-              className="flex-1 px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-md transition-colors duration-200 flex items-center justify-center gap-2"
-            >
-              <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
-                <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM9.555 7.168A1 1 0 008 8v4a1 1 0 001.555.832l3-2a1 1 0 000-1.664l-3-2z" clipRule="evenodd" />
-              </svg>
-              Run Again
-            </button>
+            {/* Second row: Use as Reference buttons */}
+            <div className="flex gap-3">
+              <button
+                onClick={handleUseAsReference1}
+                className="flex-1 px-4 py-2 bg-orange-600 hover:bg-orange-700 text-white rounded-md transition-colors duration-200 flex items-center justify-center gap-2"
+              >
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                </svg>
+                Use as Reference 1
+              </button>
+              
+              <button
+                onClick={handleUseAsReference2}
+                className="flex-1 px-4 py-2 bg-orange-600 hover:bg-orange-700 text-white rounded-md transition-colors duration-200 flex items-center justify-center gap-2"
+              >
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                </svg>
+                Use as Reference 2
+              </button>
+            </div>
 
-            <button
-              onClick={onClose}
-              className="px-6 py-2 border border-gray-300 text-gray-700 font-medium rounded-md hover:bg-gray-50 transition-colors duration-200"
-            >
-              Close
-            </button>
+            {/* Third row: Action buttons */}
+            <div className="flex gap-3">
+              <button
+                onClick={handleRunAgain}
+                className="flex-1 px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-md transition-colors duration-200 flex items-center justify-center gap-2"
+              >
+                <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
+                  <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM9.555 7.168A1 1 0 008 8v4a1 1 0 001.555.832l3-2a1 1 0 000-1.664l-3-2z" clipRule="evenodd" />
+                </svg>
+                Run Again
+              </button>
+
+              <button
+                onClick={onClose}
+                className="px-6 py-2 border border-gray-300 text-gray-700 font-medium rounded-md hover:bg-gray-50 transition-colors duration-200"
+              >
+                Close
+              </button>
+            </div>
           </div>
           <p className="text-xs text-gray-500 mt-2 text-center">
             9:16 format is optimized for mobile and social media vertical displays

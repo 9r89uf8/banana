@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react';
 import { validateImageFile } from '@/app/utils/imageUtils';
 import { ImageGenerationQueueProvider, useImageGenerationQueueContext } from '@/app/contexts/ImageGenerationQueueContext';
+import { ImageGeneratorProvider } from '@/app/contexts/ImageGeneratorContext';
 import ImageGenerationQueue from './ImageGenerationQueue';
 
 function ImageGeneratorInner() {
@@ -12,8 +13,78 @@ function ImageGeneratorInner() {
   const [image2Preview, setImage2Preview] = useState(null);
   const [prompt, setPrompt] = useState('');
   const [error, setError] = useState('');
+  const [successMessage, setSuccessMessage] = useState('');
 
   const { addToQueue, stats } = useImageGenerationQueueContext();
+
+  // Helper function to convert generated image URL to File object
+  const convertUrlToFile = async (imageUrl, fileName = 'generated-image.jpg') => {
+    try {
+      const response = await fetch(imageUrl);
+      const blob = await response.blob();
+      return new File([blob], fileName, { type: blob.type });
+    } catch (err) {
+      throw new Error('Failed to convert image URL to file');
+    }
+  };
+
+  // Method to set generated image as reference 1
+  const setGeneratedAsReference1 = async (generation) => {
+    try {
+      if (!generation?.result?.imageUrl) {
+        throw new Error('Invalid generation or missing image URL');
+      }
+
+      // Clean up previous preview
+      if (image1Preview && image1Preview.startsWith('blob:')) {
+        URL.revokeObjectURL(image1Preview);
+      }
+
+      const file = await convertUrlToFile(
+        generation.result.imageUrl,
+        `gen-ref1-${generation.id}.jpg`
+      );
+
+      setImage1(file);
+      setImage1Preview(generation.result.imageUrl);
+      setError('');
+      setSuccessMessage('Generated image set as Reference 1!');
+      
+      // Clear success message after 3 seconds
+      setTimeout(() => setSuccessMessage(''), 3000);
+    } catch (err) {
+      setError(`Failed to set reference image 1: ${err.message}`);
+    }
+  };
+
+  // Method to set generated image as reference 2
+  const setGeneratedAsReference2 = async (generation) => {
+    try {
+      if (!generation?.result?.imageUrl) {
+        throw new Error('Invalid generation or missing image URL');
+      }
+
+      // Clean up previous preview
+      if (image2Preview && image2Preview.startsWith('blob:')) {
+        URL.revokeObjectURL(image2Preview);
+      }
+
+      const file = await convertUrlToFile(
+        generation.result.imageUrl,
+        `gen-ref2-${generation.id}.jpg`
+      );
+
+      setImage2(file);
+      setImage2Preview(generation.result.imageUrl);
+      setError('');
+      setSuccessMessage('Generated image set as Reference 2!');
+      
+      // Clear success message after 3 seconds
+      setTimeout(() => setSuccessMessage(''), 3000);
+    } catch (err) {
+      setError(`Failed to set reference image 2: ${err.message}`);
+    }
+  };
 
   const handleImage1Select = (event) => {
     const file = event.target.files[0];
@@ -22,6 +93,7 @@ function ImageGeneratorInner() {
         validateImageFile(file);
         setImage1(file);
         setError('');
+        setSuccessMessage('');
 
         if (image1Preview && image1Preview.startsWith('blob:')) {
           URL.revokeObjectURL(image1Preview);
@@ -42,6 +114,7 @@ function ImageGeneratorInner() {
         validateImageFile(file);
         setImage2(file);
         setError('');
+        setSuccessMessage('');
 
         if (image2Preview && image2Preview.startsWith('blob:')) {
           URL.revokeObjectURL(image2Preview);
@@ -167,7 +240,10 @@ function ImageGeneratorInner() {
             <textarea
               id="prompt"
               value={prompt}
-              onChange={(e) => setPrompt(e.target.value)}
+              onChange={(e) => {
+                setPrompt(e.target.value);
+                if (successMessage) setSuccessMessage('');
+              }}
               placeholder="Example: Combine elements from both images to create a fantasy landscape, or merge the subjects from both images into a single scene..."
               className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent min-h-[100px] resize-none"
             />
@@ -210,12 +286,33 @@ function ImageGeneratorInner() {
               </div>
             </div>
           )}
+
+          {successMessage && (
+            <div className="border px-4 py-3 rounded-md bg-green-50 border-green-200 text-green-700">
+              <div className="flex items-start">
+                <div className="flex-shrink-0">
+                  <svg className="h-5 w-5 text-green-400 mt-0.5" viewBox="0 0 20 20" fill="currentColor">
+                    <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
+                  </svg>
+                </div>
+                <div className="ml-3">
+                  <p className="text-sm font-medium">Success</p>
+                  <p className="text-sm mt-1">{successMessage}</p>
+                </div>
+              </div>
+            </div>
+          )}
         </div>
       </div>
 
       {/* Generation Queue */}
       <div className="mt-6">
-        <ImageGenerationQueue />
+        <ImageGeneratorProvider 
+          setGeneratedAsReference1={setGeneratedAsReference1}
+          setGeneratedAsReference2={setGeneratedAsReference2}
+        >
+          <ImageGenerationQueue />
+        </ImageGeneratorProvider>
       </div>
     </div>
   );

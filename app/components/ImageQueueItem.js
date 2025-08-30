@@ -2,9 +2,11 @@
 
 import { useState } from 'react';
 import { useImageGenerationQueueContext } from '@/app/contexts/ImageGenerationQueueContext';
+import { useImageGeneratorContext } from '@/app/contexts/ImageGeneratorContext';
 
 export default function ImageQueueItem({ generation, onView }) {
   const { retryGeneration, runAgain, removeFromQueue } = useImageGenerationQueueContext();
+  const { setGeneratedAsReference1, setGeneratedAsReference2 } = useImageGeneratorContext();
   const [showActions, setShowActions] = useState(false);
 
   const getStatusIcon = (status) => {
@@ -108,6 +110,24 @@ export default function ImageQueueItem({ generation, onView }) {
     removeFromQueue(generation.id);
   };
 
+  const handleUseAsReference1 = async (e) => {
+    e.stopPropagation();
+    try {
+      await setGeneratedAsReference1(generation);
+    } catch (err) {
+      console.error('Failed to set as reference 1:', err);
+    }
+  };
+
+  const handleUseAsReference2 = async (e) => {
+    e.stopPropagation();
+    try {
+      await setGeneratedAsReference2(generation);
+    } catch (err) {
+      console.error('Failed to set as reference 2:', err);
+    }
+  };
+
   return (
     <div
       className={`relative bg-white rounded-lg border-2 ${getStatusColor(generation.status)} overflow-hidden transition-all duration-200 ${
@@ -149,15 +169,31 @@ export default function ImageQueueItem({ generation, onView }) {
             </button>
           )}
           {generation.status === 'completed' && (
-            <button
-              onClick={handleRunAgain}
-              className="w-6 h-6 bg-green-500 hover:bg-green-600 text-white rounded-full flex items-center justify-center transition-colors"
-              title="Run same generation again"
-            >
-              <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20">
-                <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM9.555 7.168A1 1 0 008 8v4a1 1 0 001.555.832l3-2a1 1 0 000-1.664l-3-2z" clipRule="evenodd" />
-              </svg>
-            </button>
+            <>
+              <button
+                onClick={handleRunAgain}
+                className="w-6 h-6 bg-green-500 hover:bg-green-600 text-white rounded-full flex items-center justify-center transition-colors"
+                title="Run same generation again"
+              >
+                <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20">
+                  <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM9.555 7.168A1 1 0 008 8v4a1 1 0 001.555.832l3-2a1 1 0 000-1.664l-3-2z" clipRule="evenodd" />
+                </svg>
+              </button>
+              <button
+                onClick={handleUseAsReference1}
+                className="w-6 h-6 bg-orange-500 hover:bg-orange-600 text-white rounded-full flex items-center justify-center transition-colors"
+                title="Use as Reference 1"
+              >
+                <span className="text-xs font-bold">1</span>
+              </button>
+              <button
+                onClick={handleUseAsReference2}
+                className="w-6 h-6 bg-orange-500 hover:bg-orange-600 text-white rounded-full flex items-center justify-center transition-colors"
+                title="Use as Reference 2"
+              >
+                <span className="text-xs font-bold">2</span>
+              </button>
+            </>
           )}
           <button
             onClick={handleRemove}
