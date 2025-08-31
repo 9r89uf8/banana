@@ -8,7 +8,9 @@ export default function AnnotationModal({
   onClose, 
   imageUrl, 
   onSave,
-  imageName = 'image'
+  imageName = 'image',
+  isBlankCanvas = false,
+  canvasAspectRatio = '4:3'
 }) {
   // Prevent background scrolling when modal is open
   useEffect(() => {
@@ -80,10 +82,13 @@ export default function AnnotationModal({
         <div className="flex items-center justify-between p-4 border-b border-gray-300">
           <div>
             <h2 className="text-xl font-semibold text-gray-800">
-              Annotate Image
+              {isBlankCanvas ? `Create Drawing (${canvasAspectRatio})` : 'Annotate Image'}
             </h2>
             <p className="text-sm text-gray-600 mt-1">
-              Draw arrows, circles, rectangles, or add text to highlight areas you want to modify
+              {isBlankCanvas 
+                ? 'Create a drawing using arrows, circles, rectangles, pen, or text as a reference image'
+                : 'Draw arrows, circles, rectangles, or add text to highlight areas you want to modify'
+              }
             </p>
           </div>
           
@@ -100,6 +105,8 @@ export default function AnnotationModal({
             onCancel={handleCancel}
             width={Math.min(window.innerWidth * 0.9, 1200)}
             height={window.innerHeight * 0.6}
+            isBlankCanvas={isBlankCanvas}
+            canvasAspectRatio={canvasAspectRatio}
           />
         </div>
 
@@ -128,7 +135,7 @@ export default function AnnotationModal({
             </div>
             <div className="flex items-center gap-1">
               <span className="font-semibold">💾:</span>
-              <span>Save your annotations before closing</span>
+              <span>Save your {isBlankCanvas ? 'drawing' : 'annotations'} before closing</span>
             </div>
           </div>
         </div>

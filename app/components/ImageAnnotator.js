@@ -22,6 +22,8 @@ export default function ImageAnnotator({
                                          onCancel,
                                          width = 800,
                                          height = 600,
+                                         isBlankCanvas = false,
+                                         canvasAspectRatio = '4:3',
                                        }) {
   const sketchRef = useRef(null);                // ReactSketchCanvas ref (freehand)
   const backgroundCanvasRef = useRef(null);      // Background image
@@ -43,9 +45,57 @@ export default function ImageAnnotator({
   // Keep a reference to the loaded image so we can redraw on size changes if needed
   const loadedImageRef = useRef(null);
 
-  // Load background image and preserve original resolution
+  // Load background image and preserve original resolution, or create blank canvas
   useEffect(() => {
-    if (!imageUrl || !backgroundCanvasRef.current) return;
+    if (!backgroundCanvasRef.current) return;
+
+    // Handle blank canvas creation
+    if (isBlankCanvas || !imageUrl) {
+      let blankWidth, blankHeight;
+      
+      // Calculate dimensions based on aspect ratio
+      if (canvasAspectRatio === '16:9') {
+        // Widescreen dimensions
+        blankWidth = Math.min(width, 960);
+        blankHeight = Math.round(blankWidth * 9 / 16);
+      } else {
+        // Normal 4:3 dimensions (default)
+        blankWidth = Math.min(width, 800);
+        blankHeight = Math.round(blankWidth * 3 / 4);
+      }
+      
+      // Ensure it fits in available space
+      if (blankHeight > height) {
+        blankHeight = height;
+        blankWidth = canvasAspectRatio === '16:9' 
+          ? Math.round(blankHeight * 16 / 9)
+          : Math.round(blankHeight * 4 / 3);
+      }
+      
+      // Set sizes for blank canvas
+      setCanvasSize({ width: blankWidth, height: blankHeight });
+      setDisplaySize({ width: blankWidth, height: blankHeight });
+
+      // Create white background canvas
+      const bg = backgroundCanvasRef.current;
+      bg.width = blankWidth;
+      bg.height = blankHeight;
+      const bgCtx = bg.getContext('2d');
+      bgCtx.fillStyle = 'white';
+      bgCtx.fillRect(0, 0, blankWidth, blankHeight);
+
+      // Initialize other canvases to match blank canvas size
+      if (annotationCanvasRef.current) {
+        annotationCanvasRef.current.width = blankWidth;
+        annotationCanvasRef.current.height = blankHeight;
+      }
+      if (overlayCanvasRef.current) {
+        overlayCanvasRef.current.width = blankWidth;
+        overlayCanvasRef.current.height = blankHeight;
+      }
+
+      return;
+    }
 
     const img = new Image();
     // Important for toBlob/exporting if image is from another origin
@@ -93,7 +143,7 @@ export default function ImageAnnotator({
     };
 
     img.src = imageUrl;
-  }, [imageUrl, width, height]);
+  }, [imageUrl, width, height, isBlankCanvas, canvasAspectRatio]);
 
   // Helpers to draw shapes
   const drawArrow = (ctx, fromX, fromY, toX, toY, color, width) => {

@@ -19,6 +19,8 @@ function ImageGeneratorInner() {
   // Annotation modal state
   const [showAnnotationModal, setShowAnnotationModal] = useState(false);
   const [annotatingImage, setAnnotatingImage] = useState(null); // 'image1' or 'image2'
+  const [isDrawingBlank, setIsDrawingBlank] = useState(false);
+  const [canvasAspectRatio, setCanvasAspectRatio] = useState('4:3');
 
   const { addToQueue, stats } = useImageGenerationQueueContext();
 
@@ -94,6 +96,14 @@ function ImageGeneratorInner() {
   // Annotation functions
   const handleAnnotateImage = (imageNumber) => {
     setAnnotatingImage(imageNumber);
+    setIsDrawingBlank(false);
+    setShowAnnotationModal(true);
+  };
+
+  // Blank canvas drawing function
+  const handleCreateBlankDrawing = () => {
+    setAnnotatingImage('image2');
+    setIsDrawingBlank(true);
     setShowAnnotationModal(true);
   };
 
@@ -165,11 +175,13 @@ function ImageGeneratorInner() {
     }
     
     setAnnotatingImage(null);
+    setIsDrawingBlank(false);
   };
 
   const handleAnnotationCancel = () => {
     setShowAnnotationModal(false);
     setAnnotatingImage(null);
+    setIsDrawingBlank(false);
   };
 
   const handleImage1Select = (event) => {
@@ -308,6 +320,37 @@ function ImageGeneratorInner() {
                 onChange={handleImage2Select}
                 className="block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-md file:border-0 file:text-sm file:font-semibold file:bg-green-50 file:text-green-700 hover:file:bg-green-100"
               />
+              
+              {!image2Preview && (
+                <div className="mt-3">
+                  <div className="flex items-center justify-center text-gray-500 text-sm mb-2">
+                    <span className="bg-gray-200 px-2 py-1 rounded">OR</span>
+                  </div>
+                  
+                  {/* Canvas size selection */}
+                  <div className="mb-3">
+                    <label className="block text-xs font-medium text-gray-600 mb-1">
+                      Canvas Size:
+                    </label>
+                    <select 
+                      value={canvasAspectRatio}
+                      onChange={(e) => setCanvasAspectRatio(e.target.value)}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm bg-white focus:outline-none focus:ring-2 focus:ring-orange-500 focus:border-transparent"
+                    >
+                      <option value="4:3">📱 Normal (4:3) - 800×600</option>
+                      <option value="16:9">🖥️ Widescreen (16:9) - 960×540</option>
+                    </select>
+                  </div>
+                  
+                  <button
+                    onClick={handleCreateBlankDrawing}
+                    className="w-full px-3 py-2 bg-orange-600 text-white text-sm font-medium rounded hover:bg-orange-700 transition-colors flex items-center justify-center gap-2"
+                  >
+                    🎨 Draw on Blank Canvas
+                  </button>
+                </div>
+              )}
+              
               {image2Preview && (
                 <div className="mt-3">
                   <img
@@ -412,9 +455,11 @@ function ImageGeneratorInner() {
       <AnnotationModal
         isOpen={showAnnotationModal}
         onClose={handleAnnotationCancel}
-        imageUrl={annotatingImage === 'image1' ? image1Preview : image2Preview}
+        imageUrl={isDrawingBlank ? null : (annotatingImage === 'image1' ? image1Preview : image2Preview)}
         onSave={handleAnnotationSave}
         imageName={annotatingImage === 'image1' ? 'reference-1' : 'reference-2'}
+        isBlankCanvas={isDrawingBlank}
+        canvasAspectRatio={canvasAspectRatio}
       />
     </div>
   );
