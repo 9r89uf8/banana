@@ -194,9 +194,14 @@ export const useImageGenerationQueue = () => {
   const addToQueue = useCallback(async (image1, image2, prompt) => {
     const id = uuidv4();
     
-    // Create thumbnails for preview
-    const image1Thumbnail = URL.createObjectURL(image1);
-    const image2Thumbnail = URL.createObjectURL(image2);
+    // Create thumbnails for preview (only for images that exist)
+    const thumbnails = {};
+    if (image1) {
+      thumbnails.image1 = URL.createObjectURL(image1);
+    }
+    if (image2) {
+      thumbnails.image2 = URL.createObjectURL(image2);
+    }
 
     const newGeneration = {
       id,
@@ -206,11 +211,8 @@ export const useImageGenerationQueue = () => {
       progress: 0,
       result: null,
       error: null,
-      thumbnails: {
-        image1: image1Thumbnail,
-        image2: image2Thumbnail
-      },
-      // Keep original files for processing
+      thumbnails,
+      // Keep original files for processing (can be null)
       image1,
       image2
     };
@@ -250,8 +252,15 @@ export const useImageGenerationQueue = () => {
     try {
       // Create FormData
       const formData = new FormData();
-      formData.append('image1', generation.image1);
-      formData.append('image2', generation.image2);
+      
+      // Only append images that exist
+      if (generation.image1) {
+        formData.append('image1', generation.image1);
+      }
+      if (generation.image2) {
+        formData.append('image2', generation.image2);
+      }
+      
       formData.append('prompt', generation.prompt);
       formData.append('generationId', id);
 
@@ -433,10 +442,10 @@ export const useImageGenerationQueue = () => {
       // Clean up thumbnails
       const item = prev.find(gen => gen.id === id);
       if (item?.thumbnails) {
-        if (item.thumbnails.image1?.startsWith('blob:')) {
+        if (item.thumbnails.image1 && item.thumbnails.image1.startsWith('blob:')) {
           URL.revokeObjectURL(item.thumbnails.image1);
         }
-        if (item.thumbnails.image2?.startsWith('blob:')) {
+        if (item.thumbnails.image2 && item.thumbnails.image2.startsWith('blob:')) {
           URL.revokeObjectURL(item.thumbnails.image2);
         }
       }
@@ -466,10 +475,10 @@ export const useImageGenerationQueue = () => {
       
       // Clean up thumbnails for completed items
       completedItems.forEach(item => {
-        if (item.thumbnails?.image1?.startsWith('blob:')) {
+        if (item.thumbnails?.image1 && item.thumbnails.image1.startsWith('blob:')) {
           URL.revokeObjectURL(item.thumbnails.image1);
         }
-        if (item.thumbnails?.image2?.startsWith('blob:')) {
+        if (item.thumbnails?.image2 && item.thumbnails.image2.startsWith('blob:')) {
           URL.revokeObjectURL(item.thumbnails.image2);
         }
       });
@@ -499,10 +508,10 @@ export const useImageGenerationQueue = () => {
       
       // Clean up thumbnails for failed items
       failedItems.forEach(item => {
-        if (item.thumbnails?.image1?.startsWith('blob:')) {
+        if (item.thumbnails?.image1 && item.thumbnails.image1.startsWith('blob:')) {
           URL.revokeObjectURL(item.thumbnails.image1);
         }
-        if (item.thumbnails?.image2?.startsWith('blob:')) {
+        if (item.thumbnails?.image2 && item.thumbnails.image2.startsWith('blob:')) {
           URL.revokeObjectURL(item.thumbnails.image2);
         }
       });
@@ -535,10 +544,10 @@ export const useImageGenerationQueue = () => {
   useEffect(() => {
     return () => {
       queue.forEach(item => {
-        if (item.thumbnails?.image1?.startsWith('blob:')) {
+        if (item.thumbnails?.image1 && item.thumbnails.image1.startsWith('blob:')) {
           URL.revokeObjectURL(item.thumbnails.image1);
         }
-        if (item.thumbnails?.image2?.startsWith('blob:')) {
+        if (item.thumbnails?.image2 && item.thumbnails.image2.startsWith('blob:')) {
           URL.revokeObjectURL(item.thumbnails.image2);
         }
       });

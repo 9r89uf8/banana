@@ -7,13 +7,24 @@ export class GeminiGenerateService extends GeminiBaseService {
 
   async generateImage(image1Buffer, image2Buffer, prompt) {
     try {
-      const image1Part = this._bufferToInlinePart(image1Buffer);
-      const image2Part = this._bufferToInlinePart(image2Buffer);
+      // Build parts array dynamically based on available images
+      const parts = [];
+      
+      if (image1Buffer) {
+        parts.push(this._bufferToInlinePart(image1Buffer));
+      }
+      
+      if (image2Buffer) {
+        parts.push(this._bufferToInlinePart(image2Buffer));
+      }
+      
+      // Always add the text prompt
+      parts.push({ text: prompt });
 
       const contents = [
         {
           role: 'user',
-          parts: [image1Part, image2Part, { text: prompt }],
+          parts: parts,
         },
       ];
 

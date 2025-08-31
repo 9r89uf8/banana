@@ -16,11 +16,22 @@ export async function POST(request) {
     // Check rate limit
     ImageValidationMiddleware.checkRateLimit(clientIP);
     
-    // Validate images
-    const validatedImages = await ImageValidationMiddleware.validateImages(
-      formData,
-      ['image1', 'image2']
-    );
+    // Get images from form data (both are optional)
+    const image1File = formData.get('image1');
+    const image2File = formData.get('image2');
+    
+    // Validate only the images that are provided
+    const imageFields = [];
+    if (image1File && image1File.size > 0) imageFields.push('image1');
+    if (image2File && image2File.size > 0) imageFields.push('image2');
+    
+    let validatedImages = {};
+    if (imageFields.length > 0) {
+      validatedImages = await ImageValidationMiddleware.validateImages(
+        formData,
+        imageFields
+      );
+    }
     
     // Get and validate prompt
     const prompt = formData.get('prompt');
@@ -30,31 +41,47 @@ export async function POST(request) {
 
     console.log('Processing image generation request:', {
       prompt: prompt.substring(0, 100) + '...',
-      image1Size: validatedImages.image1.size,
-      image2Size: validatedImages.image2.size,
+      image1Size: validatedImages.image1?.size || 'none',
+      image2Size: validatedImages.image2?.size || 'none',
       clientIP: clientIP.substring(0, 8) + '***'
     });
 
-    // Use validated image buffers
-    const image1Buffer = validatedImages.image1.buffer;
-    const image2Buffer = validatedImages.image2.buffer;
+    // Use validated image buffers (if they exist)
+    const image1Buffer = validatedImages.image1?.buffer || null;
+    const image2Buffer = validatedImages.image2?.buffer || null;
 
-    // Upload reference images to Firebase Storage first
-    console.log('Uploading reference images to Firebase...');
+    // Upload reference images to Firebase Storage (only if they exist)
     const generationId = uuidv4();
+    let referenceImage1Url = null;
+    let referenceImage2Url = null;
     
-    const [referenceImage1Url, referenceImage2Url] = await Promise.all([
-      uploadToFirebaseStorage(
-        image1Buffer,
-        `reference-images/${generationId}-ref1.${validatedImages.image1.originalName?.split('.').pop() || 'jpg'}`,
-        validatedImages.image1.mimeType
-      ),
-      uploadToFirebaseStorage(
-        image2Buffer,
-        `reference-images/${generationId}-ref2.${validatedImages.image2.originalName?.split('.').pop() || 'jpg'}`,
-        validatedImages.image2.mimeType
-      )
-    ]);
+    const uploadPromises = [];
+    
+    if (image1Buffer) {
+      console.log('Uploading reference image 1 to Firebase...');
+      uploadPromises.push(
+        uploadToFirebaseStorage(
+          image1Buffer,
+          `reference-images/${generationId}-ref1.${validatedImages.image1.originalName?.split('.').pop() || 'jpg'}`,
+          validatedImages.image1.mimeType
+        ).then(url => referenceImage1Url = url)
+      );
+    }
+    
+    if (image2Buffer) {
+      console.log('Uploading reference image 2 to Firebase...');
+      uploadPromises.push(
+        uploadToFirebaseStorage(
+          image2Buffer,
+          `reference-images/${generationId}-ref2.${validatedImages.image2.originalName?.split('.').pop() || 'jpg'}`,
+          validatedImages.image2.mimeType
+        ).then(url => referenceImage2Url = url)
+      );
+    }
+    
+    if (uploadPromises.length > 0) {
+      await Promise.all(uploadPromises);
+    }
 
     // Generate image using Gemini
     console.log('Calling Gemini service for image generation...');
@@ -81,9 +108,9 @@ export async function POST(request) {
       prompt,
       fileName,
       processingSteps: [
-        'Reference images uploaded to storage',
-        'Images converted to buffers',
-        'AI generation with reference images and prompt',
+        image1Buffer || image2Buffer ? 'Reference images uploaded to storage' : 'Text-only generation (no reference images)',
+        image1Buffer || image2Buffer ? 'Images converted to buffers' : 'Processing text prompt',
+        image1Buffer || image2Buffer ? 'AI generation with reference images and prompt' : 'AI generation with text prompt only',
         'Generated image uploaded to storage'
       ]
     });

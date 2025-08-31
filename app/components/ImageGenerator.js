@@ -5,6 +5,7 @@ import { validateImageFile } from '@/app/utils/imageUtils';
 import { ImageGenerationQueueProvider, useImageGenerationQueueContext } from '@/app/contexts/ImageGenerationQueueContext';
 import { ImageGeneratorProvider } from '@/app/contexts/ImageGeneratorContext';
 import ImageGenerationQueue from './ImageGenerationQueue';
+import AnnotationModal from './AnnotationModal';
 
 function ImageGeneratorInner() {
   const [image1, setImage1] = useState(null);
@@ -14,6 +15,10 @@ function ImageGeneratorInner() {
   const [prompt, setPrompt] = useState('');
   const [error, setError] = useState('');
   const [successMessage, setSuccessMessage] = useState('');
+  
+  // Annotation modal state
+  const [showAnnotationModal, setShowAnnotationModal] = useState(false);
+  const [annotatingImage, setAnnotatingImage] = useState(null); // 'image1' or 'image2'
 
   const { addToQueue, stats } = useImageGenerationQueueContext();
 
@@ -86,6 +91,87 @@ function ImageGeneratorInner() {
     }
   };
 
+  // Annotation functions
+  const handleAnnotateImage = (imageNumber) => {
+    setAnnotatingImage(imageNumber);
+    setShowAnnotationModal(true);
+  };
+
+  const handleAnnotationSave = (annotatedImageFile) => {
+    try {
+      // Validate the annotated image file
+      if (!annotatedImageFile) {
+        throw new Error('No annotated image file provided');
+      }
+      
+      if (!(annotatedImageFile instanceof File) && !(annotatedImageFile instanceof Blob)) {
+        throw new Error('Invalid file type provided - expected File or Blob');
+      }
+      
+      if (annotatedImageFile.size === 0) {
+        throw new Error('Annotated image file is empty');
+      }
+      
+      console.log('Processing annotated image:', annotatedImageFile.name || 'blob', annotatedImageFile.size, 'bytes');
+      
+      // Validate the file using existing validation
+      validateImageFile(annotatedImageFile);
+      
+      if (annotatingImage === 'image1') {
+        setImage1(annotatedImageFile);
+        
+        // Clean up previous preview
+        if (image1Preview && image1Preview.startsWith('blob:')) {
+          URL.revokeObjectURL(image1Preview);
+        }
+        
+        // Create object URL with validation
+        try {
+          const objectURL = URL.createObjectURL(annotatedImageFile);
+          setImage1Preview(objectURL);
+          setSuccessMessage('Image 1 annotations saved successfully!');
+          console.log('Created object URL for image 1:', objectURL);
+        } catch (urlError) {
+          throw new Error(`Failed to create preview URL for image 1: ${urlError.message}`);
+        }
+        
+      } else if (annotatingImage === 'image2') {
+        setImage2(annotatedImageFile);
+        
+        // Clean up previous preview
+        if (image2Preview && image2Preview.startsWith('blob:')) {
+          URL.revokeObjectURL(image2Preview);
+        }
+        
+        // Create object URL with validation
+        try {
+          const objectURL = URL.createObjectURL(annotatedImageFile);
+          setImage2Preview(objectURL);
+          setSuccessMessage('Image 2 annotations saved successfully!');
+          console.log('Created object URL for image 2:', objectURL);
+        } catch (urlError) {
+          throw new Error(`Failed to create preview URL for image 2: ${urlError.message}`);
+        }
+      } else {
+        throw new Error('Invalid annotating image identifier');
+      }
+      
+      setError('');
+      // Clear success message after 3 seconds
+      setTimeout(() => setSuccessMessage(''), 3000);
+    } catch (err) {
+      console.error('Error in handleAnnotationSave:', err);
+      setError(`Failed to save annotated image: ${err.message}`);
+    }
+    
+    setAnnotatingImage(null);
+  };
+
+  const handleAnnotationCancel = () => {
+    setShowAnnotationModal(false);
+    setAnnotatingImage(null);
+  };
+
   const handleImage1Select = (event) => {
     const file = event.target.files[0];
     if (file) {
@@ -145,13 +231,8 @@ function ImageGeneratorInner() {
   }, [image2Preview]);
 
   const handleAddToQueue = async () => {
-    if (!image1 || !image2) {
-      setError('Please select both reference images');
-      return;
-    }
-
     if (!prompt.trim()) {
-      setError('Please enter a prompt describing how to use the reference images');
+      setError('Please enter a prompt for image generation');
       return;
     }
 
@@ -207,6 +288,12 @@ function ImageGeneratorInner() {
                     alt="Reference image 1"
                     className="w-full max-w-sm rounded-lg shadow-md"
                   />
+                  <button
+                    onClick={() => handleAnnotateImage('image1')}
+                    className="mt-2 w-full px-3 py-2 bg-purple-600 text-white text-sm font-medium rounded hover:bg-purple-700 transition-colors"
+                  >
+                    ✏️ Annotate Image
+                  </button>
                 </div>
               )}
             </div>
@@ -228,6 +315,12 @@ function ImageGeneratorInner() {
                     alt="Reference image 2"
                     className="w-full max-w-sm rounded-lg shadow-md"
                   />
+                  <button
+                    onClick={() => handleAnnotateImage('image2')}
+                    className="mt-2 w-full px-3 py-2 bg-purple-600 text-white text-sm font-medium rounded hover:bg-purple-700 transition-colors"
+                  >
+                    ✏️ Annotate Image
+                  </button>
                 </div>
               )}
             </div>
@@ -235,7 +328,7 @@ function ImageGeneratorInner() {
 
           <div>
             <label htmlFor="prompt" className="block text-sm font-medium text-gray-700 mb-2">
-              Describe how to use the reference images to generate a new image
+              Describe the image you want to generate
             </label>
             <textarea
               id="prompt"
@@ -244,7 +337,7 @@ function ImageGeneratorInner() {
                 setPrompt(e.target.value);
                 if (successMessage) setSuccessMessage('');
               }}
-              placeholder="Example: Combine elements from both images to create a fantasy landscape, or merge the subjects from both images into a single scene..."
+              placeholder="Example: A fantasy landscape with mountains and dragons, or combine elements from reference images if provided, or modify specific parts of an uploaded image..."
               className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent min-h-[100px] resize-none"
             />
           </div>
@@ -252,7 +345,7 @@ function ImageGeneratorInner() {
           <div className="flex space-x-4">
             <button
               onClick={handleAddToQueue}
-              disabled={!image1 || !image2 || !prompt.trim()}
+              disabled={!prompt.trim()}
               className="flex-1 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-400 text-white font-semibold py-3 px-6 rounded-md transition-colors duration-200"
             >
               Add to Queue
@@ -314,6 +407,15 @@ function ImageGeneratorInner() {
           <ImageGenerationQueue />
         </ImageGeneratorProvider>
       </div>
+
+      {/* Annotation Modal */}
+      <AnnotationModal
+        isOpen={showAnnotationModal}
+        onClose={handleAnnotationCancel}
+        imageUrl={annotatingImage === 'image1' ? image1Preview : image2Preview}
+        onSave={handleAnnotationSave}
+        imageName={annotatingImage === 'image1' ? 'reference-1' : 'reference-2'}
+      />
     </div>
   );
 }
