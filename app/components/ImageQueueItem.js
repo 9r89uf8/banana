@@ -107,6 +107,7 @@ export default function ImageQueueItem({ generation, onView }) {
 
   const handleRemove = (e) => {
     e.stopPropagation();
+    console.log(generation.id)
     removeFromQueue(generation.id);
   };
 

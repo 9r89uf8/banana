@@ -3,7 +3,7 @@
 import { 
   collection, 
   doc, 
-  addDoc, 
+  setDoc, 
   getDocs, 
   updateDoc, 
   deleteDoc, 
@@ -27,6 +27,10 @@ export const generationsService = {
    */
   async saveGeneration(generation, userId = null) {
     try {
+      if (!generation.id) {
+        throw new Error('Generation must have an id field');
+      }
+
       const generationData = {
         ...generation,
         userId: userId || 'anonymous',
@@ -35,8 +39,9 @@ export const generationsService = {
         updatedAt: serverTimestamp()
       };
 
-      const docRef = await addDoc(collection(db, GENERATIONS_COLLECTION), generationData);
-      return docRef.id;
+      const docRef = doc(db, GENERATIONS_COLLECTION, generation.id);
+      await setDoc(docRef, generationData);
+      return generation.id;
     } catch (error) {
       console.error('Error saving generation to Firestore:', error);
       throw new Error('Failed to save generation to database');
@@ -117,6 +122,8 @@ export const generationsService = {
    * @returns {Promise<void>}
    */
   async deleteGeneration(id) {
+    console.log('delete')
+    console.log(id)
     try {
       const docRef = doc(db, GENERATIONS_COLLECTION, id);
       await deleteDoc(docRef);

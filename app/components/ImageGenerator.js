@@ -6,6 +6,7 @@ import { ImageGenerationQueueProvider, useImageGenerationQueueContext } from '@/
 import { ImageGeneratorProvider } from '@/app/contexts/ImageGeneratorContext';
 import ImageGenerationQueue from './ImageGenerationQueue';
 import AnnotationModal from './AnnotationModal';
+import ImageLibraryModal from './ImageLibraryModal';
 
 function ImageGeneratorInner() {
   const [image1, setImage1] = useState(null);
@@ -16,11 +17,21 @@ function ImageGeneratorInner() {
   const [error, setError] = useState('');
   const [successMessage, setSuccessMessage] = useState('');
   
+  // Image source tracking (file, library, generated)
+  const [image1Source, setImage1Source] = useState(null);
+  const [image2Source, setImage2Source] = useState(null);
+  const [image1LibraryData, setImage1LibraryData] = useState(null);
+  const [image2LibraryData, setImage2LibraryData] = useState(null);
+  
   // Annotation modal state
   const [showAnnotationModal, setShowAnnotationModal] = useState(false);
   const [annotatingImage, setAnnotatingImage] = useState(null); // 'image1' or 'image2'
   const [isDrawingBlank, setIsDrawingBlank] = useState(false);
   const [canvasAspectRatio, setCanvasAspectRatio] = useState('4:3');
+  
+  // Library modal state
+  const [showLibraryModal, setShowLibraryModal] = useState(false);
+  const [libraryModalTarget, setLibraryModalTarget] = useState(null); // 'image1' or 'image2'
 
   const { addToQueue, stats } = useImageGenerationQueueContext();
 
@@ -53,6 +64,8 @@ function ImageGeneratorInner() {
       );
 
       setImage1(file);
+      setImage1Source('generated');
+      setImage1LibraryData(null);
       setImage1Preview(generation.result.imageUrl);
       setError('');
       setSuccessMessage('Generated image set as Reference 1!');
@@ -82,6 +95,8 @@ function ImageGeneratorInner() {
       );
 
       setImage2(file);
+      setImage2Source('generated');
+      setImage2LibraryData(null);
       setImage2Preview(generation.result.imageUrl);
       setError('');
       setSuccessMessage('Generated image set as Reference 2!');
@@ -129,6 +144,8 @@ function ImageGeneratorInner() {
       
       if (annotatingImage === 'image1') {
         setImage1(annotatedImageFile);
+        setImage1Source('annotated');
+        setImage1LibraryData(null);
         
         // Clean up previous preview
         if (image1Preview && image1Preview.startsWith('blob:')) {
@@ -147,6 +164,8 @@ function ImageGeneratorInner() {
         
       } else if (annotatingImage === 'image2') {
         setImage2(annotatedImageFile);
+        setImage2Source('annotated');
+        setImage2LibraryData(null);
         
         // Clean up previous preview
         if (image2Preview && image2Preview.startsWith('blob:')) {
@@ -190,6 +209,8 @@ function ImageGeneratorInner() {
       try {
         validateImageFile(file);
         setImage1(file);
+        setImage1Source('file');
+        setImage1LibraryData(null);
         setError('');
         setSuccessMessage('');
 
@@ -211,6 +232,8 @@ function ImageGeneratorInner() {
       try {
         validateImageFile(file);
         setImage2(file);
+        setImage2Source('file');
+        setImage2LibraryData(null);
         setError('');
         setSuccessMessage('');
 
@@ -249,7 +272,15 @@ function ImageGeneratorInner() {
     }
 
     try {
-      await addToQueue(image1, image2, prompt);
+      await addToQueue(
+        image1, 
+        image2, 
+        prompt, 
+        image1Source, 
+        image2Source, 
+        image1LibraryData, 
+        image2LibraryData
+      );
       setPrompt('');
       setError(''); // Clear any previous errors
       // Optionally reset the form after adding to queue
@@ -257,6 +288,56 @@ function ImageGeneratorInner() {
     } catch (err) {
       setError(err.message || 'Failed to add to generation queue');
     }
+  };
+
+  // Library selection handlers
+  const handleLibrarySelect = (targetImage) => {
+    setLibraryModalTarget(targetImage);
+    setShowLibraryModal(true);
+  };
+
+  const handleLibraryImageSelect = (libraryImage) => {
+    try {
+      const targetImage = libraryModalTarget;
+      
+      if (targetImage === 'image1') {
+        // Clean up previous preview
+        if (image1Preview && image1Preview.startsWith('blob:')) {
+          URL.revokeObjectURL(image1Preview);
+        }
+        
+        // Set library image data
+        setImage1(libraryImage.imageUrl); // Store URL instead of File for library images
+        setImage1Source('library');
+        setImage1LibraryData(libraryImage);
+        setImage1Preview(libraryImage.imageUrl);
+        setSuccessMessage(`Library image "${libraryImage.name}" set as Reference 1!`);
+        
+      } else if (targetImage === 'image2') {
+        // Clean up previous preview
+        if (image2Preview && image2Preview.startsWith('blob:')) {
+          URL.revokeObjectURL(image2Preview);
+        }
+        
+        // Set library image data
+        setImage2(libraryImage.imageUrl); // Store URL instead of File for library images
+        setImage2Source('library');
+        setImage2LibraryData(libraryImage);
+        setImage2Preview(libraryImage.imageUrl);
+        setSuccessMessage(`Library image "${libraryImage.name}" set as Reference 2!`);
+      }
+      
+      setError('');
+      // Clear success message after 3 seconds
+      setTimeout(() => setSuccessMessage(''), 3000);
+      
+    } catch (err) {
+      console.error('Error selecting library image:', err);
+      setError(`Failed to select library image: ${err.message}`);
+    }
+    
+    setShowLibraryModal(false);
+    setLibraryModalTarget(null);
   };
 
   const resetForm = () => {
@@ -271,6 +352,10 @@ function ImageGeneratorInner() {
     setImage2(null);
     setImage1Preview(null);
     setImage2Preview(null);
+    setImage1Source(null);
+    setImage2Source(null);
+    setImage1LibraryData(null);
+    setImage2LibraryData(null);
     setPrompt('');
     setError('');
   };
@@ -287,19 +372,67 @@ function ImageGeneratorInner() {
               <label className="block text-sm font-medium text-gray-700 mb-2">
                 Reference Image 1
               </label>
-              <input
-                type="file"
-                accept="image/*"
-                onChange={handleImage1Select}
-                className="block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-md file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100"
-              />
+              
+              <div className="space-y-3">
+                {/* File Upload */}
+                <input
+                  type="file"
+                  accept="image/*"
+                  onChange={handleImage1Select}
+                  className="block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-md file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100"
+                />
+                
+                {/* OR divider */}
+                <div className="flex items-center justify-center text-gray-500 text-sm">
+                  <span className="bg-gray-200 px-2 py-1 rounded">OR</span>
+                </div>
+                
+                {/* Library Selection */}
+                <button
+                  onClick={() => handleLibrarySelect('image1')}
+                  className="w-full px-3 py-2 border border-gray-300 text-gray-700 text-sm font-medium rounded hover:bg-gray-50 transition-colors flex items-center justify-center gap-2"
+                >
+                  📚 Choose from Library
+                </button>
+              </div>
+              
               {image1Preview && (
                 <div className="mt-3">
-                  <img
-                    src={image1Preview}
-                    alt="Reference image 1"
-                    className="w-full max-w-sm rounded-lg shadow-md"
-                  />
+                  <div className="relative">
+                    <img
+                      src={image1Preview}
+                      alt="Reference image 1"
+                      className="w-full max-w-sm rounded-lg shadow-md"
+                    />
+                    
+                    {/* Source indicator */}
+                    <div className="absolute top-2 left-2">
+                      <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${
+                        image1Source === 'library' ? 'bg-green-100 text-green-800' :
+                        image1Source === 'generated' ? 'bg-purple-100 text-purple-800' :
+                        image1Source === 'annotated' ? 'bg-orange-100 text-orange-800' :
+                        'bg-blue-100 text-blue-800'
+                      }`}>
+                        {image1Source === 'library' ? '📚 Library' :
+                         image1Source === 'generated' ? '🤖 Generated' :
+                         image1Source === 'annotated' ? '✏️ Annotated' :
+                         '📁 Uploaded'}
+                      </span>
+                    </div>
+                    
+                    {/* Library image info */}
+                    {image1Source === 'library' && image1LibraryData && (
+                      <div className="absolute bottom-2 left-2 right-2">
+                        <div className="bg-black bg-opacity-70 text-white text-xs px-2 py-1 rounded">
+                          {image1LibraryData.name}
+                          {image1LibraryData.useCount > 0 && (
+                            <span className="ml-2 opacity-75">• Used {image1LibraryData.useCount} times</span>
+                          )}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                  
                   <button
                     onClick={() => handleAnnotateImage('image1')}
                     className="mt-2 w-full px-3 py-2 bg-purple-600 text-white text-sm font-medium rounded hover:bg-purple-700 transition-colors"
@@ -314,12 +447,33 @@ function ImageGeneratorInner() {
               <label className="block text-sm font-medium text-gray-700 mb-2">
                 Reference Image 2
               </label>
-              <input
-                type="file"
-                accept="image/*"
-                onChange={handleImage2Select}
-                className="block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-md file:border-0 file:text-sm file:font-semibold file:bg-green-50 file:text-green-700 hover:file:bg-green-100"
-              />
+              
+              <div className="space-y-3">
+                {/* File Upload */}
+                <input
+                  type="file"
+                  accept="image/*"
+                  onChange={handleImage2Select}
+                  className="block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-md file:border-0 file:text-sm file:font-semibold file:bg-green-50 file:text-green-700 hover:file:bg-green-100"
+                />
+                
+                {/* OR divider - only show if no image2 */}
+                {!image2Preview && (
+                  <>
+                    <div className="flex items-center justify-center text-gray-500 text-sm">
+                      <span className="bg-gray-200 px-2 py-1 rounded">OR</span>
+                    </div>
+                    
+                    {/* Library Selection */}
+                    <button
+                      onClick={() => handleLibrarySelect('image2')}
+                      className="w-full px-3 py-2 border border-gray-300 text-gray-700 text-sm font-medium rounded hover:bg-gray-50 transition-colors flex items-center justify-center gap-2"
+                    >
+                      📚 Choose from Library
+                    </button>
+                  </>
+                )}
+              </div>
               
               {!image2Preview && (
                 <div className="mt-3">
@@ -353,11 +507,41 @@ function ImageGeneratorInner() {
               
               {image2Preview && (
                 <div className="mt-3">
-                  <img
-                    src={image2Preview}
-                    alt="Reference image 2"
-                    className="w-full max-w-sm rounded-lg shadow-md"
-                  />
+                  <div className="relative">
+                    <img
+                      src={image2Preview}
+                      alt="Reference image 2"
+                      className="w-full max-w-sm rounded-lg shadow-md"
+                    />
+                    
+                    {/* Source indicator */}
+                    <div className="absolute top-2 left-2">
+                      <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${
+                        image2Source === 'library' ? 'bg-green-100 text-green-800' :
+                        image2Source === 'generated' ? 'bg-purple-100 text-purple-800' :
+                        image2Source === 'annotated' ? 'bg-orange-100 text-orange-800' :
+                        'bg-blue-100 text-blue-800'
+                      }`}>
+                        {image2Source === 'library' ? '📚 Library' :
+                         image2Source === 'generated' ? '🤖 Generated' :
+                         image2Source === 'annotated' ? '✏️ Annotated' :
+                         '📁 Uploaded'}
+                      </span>
+                    </div>
+                    
+                    {/* Library image info */}
+                    {image2Source === 'library' && image2LibraryData && (
+                      <div className="absolute bottom-2 left-2 right-2">
+                        <div className="bg-black bg-opacity-70 text-white text-xs px-2 py-1 rounded">
+                          {image2LibraryData.name}
+                          {image2LibraryData.useCount > 0 && (
+                            <span className="ml-2 opacity-75">• Used {image2LibraryData.useCount} times</span>
+                          )}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                  
                   <button
                     onClick={() => handleAnnotateImage('image2')}
                     className="mt-2 w-full px-3 py-2 bg-purple-600 text-white text-sm font-medium rounded hover:bg-purple-700 transition-colors"
@@ -460,6 +644,19 @@ function ImageGeneratorInner() {
         imageName={annotatingImage === 'image1' ? 'reference-1' : 'reference-2'}
         isBlankCanvas={isDrawingBlank}
         canvasAspectRatio={canvasAspectRatio}
+      />
+      
+      {/* Image Library Modal */}
+      <ImageLibraryModal
+        isOpen={showLibraryModal}
+        onClose={() => {
+          setShowLibraryModal(false);
+          setLibraryModalTarget(null);
+        }}
+        onSelectImage={handleLibraryImageSelect}
+        title={`Select Reference Image ${libraryModalTarget === 'image1' ? '1' : '2'}`}
+        userId="anonymous"
+        allowUpload={true}
       />
     </div>
   );

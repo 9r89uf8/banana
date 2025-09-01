@@ -4,8 +4,6 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { v4 as uuidv4 } from 'uuid';
 import { generationsService } from '@/app/services/firebase/generationsService';
 
-const STORAGE_KEY = 'imageGenerationQueue';
-
 /**
  * Hook for managing the image generation queue state and operations
  */
@@ -31,79 +29,18 @@ export const useImageGenerationQueue = () => {
     };
   }, []);
 
-  // Load queue from Firestore on mount with fallback to localStorage and migration
+  // Load queue from Firestore on mount
   useEffect(() => {
     const loadQueue = async () => {
       try {
         setIsLoading(true);
         
         if (isOnline) {
-          // Try to load from Firestore first
+          // Load from Firestore
           const firestoreGenerations = await generationsService.getGenerations();
           
-          // Check for localStorage data to migrate
-          const localStorageData = localStorage.getItem(STORAGE_KEY);
-          let localGenerations = [];
-          
-          if (localStorageData) {
-            try {
-              const parsedLocalData = JSON.parse(localStorageData);
-              localGenerations = parsedLocalData.map(item => ({
-                ...item,
-                timestamp: new Date(item.timestamp)
-              }));
-            } catch (parseError) {
-              console.error('Failed to parse localStorage data:', parseError);
-            }
-          }
-          
-          // Migrate localStorage data to Firestore if it doesn't exist there
-          const migratedGenerations = [];
-          if (localGenerations.length > 0) {
-            console.log(`Found ${localGenerations.length} generations in localStorage, checking for migration...`);
-            
-            const firestoreIds = new Set(firestoreGenerations.map(fg => fg.id));
-            const generationsToMigrate = localGenerations.filter(lg => !firestoreIds.has(lg.id));
-            
-            if (generationsToMigrate.length > 0) {
-              console.log(`Migrating ${generationsToMigrate.length} generations to Firestore...`);
-              
-              for (const generation of generationsToMigrate) {
-                try {
-                  // Only migrate completed or failed generations (don't migrate File objects)
-                  if (generation.status === 'completed' || generation.status === 'failed') {
-                    const migrationData = {
-                      id: generation.id,
-                      status: generation.status,
-                      prompt: generation.prompt,
-                      timestamp: generation.timestamp,
-                      progress: generation.progress || 0,
-                      error: generation.error || null,
-                      // For localStorage migrations, we might not have reference image URLs
-                      referenceImage1Url: generation.referenceImage1Url || null,
-                      referenceImage2Url: generation.referenceImage2Url || null,
-                      imageUrl: generation.result?.imageUrl || null,
-                      result: generation.result || null,
-                      thumbnails: generation.thumbnails || null
-                    };
-                    
-                    await generationsService.saveGeneration(migrationData);
-                    migratedGenerations.push(migrationData);
-                  }
-                } catch (migrationError) {
-                  console.error(`Failed to migrate generation ${generation.id}:`, migrationError);
-                }
-              }
-              
-              console.log(`Successfully migrated ${migratedGenerations.length} generations to Firestore`);
-            }
-          }
-          
-          // Combine Firestore data with any newly migrated data
-          const allGenerations = [...firestoreGenerations, ...migratedGenerations];
-          
           // Mark any active generations as failed (in case of browser crash/reload)
-          const restoredQueue = allGenerations.map(item => ({
+          const restoredQueue = firestoreGenerations.map(item => ({
             ...item,
             status: ['pending', 'uploading', 'processing'].includes(item.status) 
               ? 'failed' : item.status
@@ -115,52 +52,20 @@ export const useImageGenerationQueue = () => {
           const failedUpdates = restoredQueue
             .filter(item => item.status === 'failed' && 
               ['pending', 'uploading', 'processing'].includes(
-                allGenerations.find(ag => ag.id === item.id)?.status
+                firestoreGenerations.find(ag => ag.id === item.id)?.status
               ))
             .map(item => generationsService.updateGeneration(item.id, { status: 'failed' }));
           
           if (failedUpdates.length > 0) {
             await Promise.all(failedUpdates);
           }
-          
-          // Clear localStorage after successful migration (keep as backup but mark as migrated)
-          if (migratedGenerations.length > 0) {
-            localStorage.setItem(STORAGE_KEY + '_migrated', 'true');
-          }
-          
         } else {
-          // Fallback to localStorage when offline
-          const saved = localStorage.getItem(STORAGE_KEY);
-          if (saved) {
-            const parsedQueue = JSON.parse(saved);
-            const restoredQueue = parsedQueue.map(item => ({
-              ...item,
-              status: ['pending', 'uploading', 'processing'].includes(item.status) 
-                ? 'failed' : item.status,
-              timestamp: new Date(item.timestamp)
-            }));
-            setQueue(restoredQueue);
-          }
+          // When offline, start with empty queue
+          setQueue([]);
         }
       } catch (error) {
         console.error('Failed to load image generation queue:', error);
-        
-        // Fallback to localStorage on error
-        try {
-          const saved = localStorage.getItem(STORAGE_KEY);
-          if (saved) {
-            const parsedQueue = JSON.parse(saved);
-            const restoredQueue = parsedQueue.map(item => ({
-              ...item,
-              status: ['pending', 'uploading', 'processing'].includes(item.status) 
-                ? 'failed' : item.status,
-              timestamp: new Date(item.timestamp)
-            }));
-            setQueue(restoredQueue);
-          }
-        } catch (localError) {
-          console.error('Failed to load from localStorage fallback:', localError);
-        }
+        setQueue([]);
       } finally {
         setIsLoading(false);
       }
@@ -169,16 +74,6 @@ export const useImageGenerationQueue = () => {
     loadQueue();
   }, [isOnline]);
 
-  // Save queue to localStorage as backup (always maintain local backup)
-  useEffect(() => {
-    if (isLoading) return;
-    
-    try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(queue));
-    } catch (error) {
-      console.error('Failed to save image generation queue to localStorage:', error);
-    }
-  }, [queue, isLoading]);
 
   // Count active generations
   useEffect(() => {
@@ -191,16 +86,28 @@ export const useImageGenerationQueue = () => {
   /**
    * Add a new generation to the queue
    */
-  const addToQueue = useCallback(async (image1, image2, prompt) => {
+  const addToQueue = useCallback(async (image1, image2, prompt, image1Source = null, image2Source = null, image1LibraryData = null, image2LibraryData = null) => {
     const id = uuidv4();
     
     // Create thumbnails for preview (only for images that exist)
     const thumbnails = {};
     if (image1) {
-      thumbnails.image1 = URL.createObjectURL(image1);
+      if (typeof image1 === 'string') {
+        // It's a URL (from library)
+        thumbnails.image1 = image1;
+      } else {
+        // It's a File object
+        thumbnails.image1 = URL.createObjectURL(image1);
+      }
     }
     if (image2) {
-      thumbnails.image2 = URL.createObjectURL(image2);
+      if (typeof image2 === 'string') {
+        // It's a URL (from library)
+        thumbnails.image2 = image2;
+      } else {
+        // It's a File object
+        thumbnails.image2 = URL.createObjectURL(image2);
+      }
     }
 
     const newGeneration = {
@@ -212,9 +119,14 @@ export const useImageGenerationQueue = () => {
       result: null,
       error: null,
       thumbnails,
-      // Keep original files for processing (can be null)
+      // Keep original files/URLs for processing (can be null)
       image1,
-      image2
+      image2,
+      // Track image sources
+      image1Source,
+      image2Source,
+      image1LibraryData,
+      image2LibraryData
     };
 
     setQueue(prev => [newGeneration, ...prev]);
@@ -253,12 +165,25 @@ export const useImageGenerationQueue = () => {
       // Create FormData
       const formData = new FormData();
       
-      // Only append images that exist
+      // Handle images based on their type (File object or URL string)
       if (generation.image1) {
-        formData.append('image1', generation.image1);
+        if (typeof generation.image1 === 'string') {
+          // It's a URL from library
+          formData.append('image1Url', generation.image1);
+        } else {
+          // It's a File object
+          formData.append('image1', generation.image1);
+        }
       }
+      
       if (generation.image2) {
-        formData.append('image2', generation.image2);
+        if (typeof generation.image2 === 'string') {
+          // It's a URL from library
+          formData.append('image2Url', generation.image2);
+        } else {
+          // It's a File object
+          formData.append('image2', generation.image2);
+        }
       }
       
       formData.append('prompt', generation.prompt);
